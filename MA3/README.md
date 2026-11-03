@@ -6,11 +6,25 @@ page the desk is on. This small Lua plugin sends those to the app.
 
 ## Install
 
-1. On the console (or grandMA3 onPC), open the **Plugins** pool and edit an
-   empty plugin.
-2. Add a Lua component, and paste in the contents of
-   [`ShowDeckFeedback.lua`](ShowDeckFeedback.lua).
-3. Name the plugin **Show Deck**.
+The `ShowDeck` folder here holds the plugin: `ShowDeck.xml` (what MA imports)
+and `ShowDeckFeedback.lua` (the code). Copy the whole folder, not just the
+files, into the console's plugin library:
+
+| Where | Put the `ShowDeck` folder in |
+|---|---|
+| USB stick (console or onPC) | `grandMA3/gma3_library/datapools/plugins/` |
+| grandMA3 onPC on a Mac | `~/MALightingTechnology/gma3_library/datapools/plugins/` |
+| grandMA3 onPC on Windows | `C:\ProgramData\MALightingTechnology\gma3_library\datapools\plugins\` |
+
+Create any folders that don't exist yet. Then, on the console:
+
+1. Open a **Plugins** pool window (add a window › Pools › Plugins).
+2. Edit an empty plugin slot and choose **Import**. Or use the Import/Export
+   menu and go to Plugins.
+3. Pick the drive (the USB stick, or Internal for onPC), choose **Show Deck**,
+   and import.
+
+The plugin is saved in your show file from then on.
 
 ## Set up OSC
 
@@ -26,7 +40,10 @@ unless you change `OSC_LINE` at the top of the plugin):
 
 ## Run
 
-Tap the plugin, or type `Plugin "Show Deck"`, to start it; do it again to stop.
+Tap the plugin in the pool, or type `Plugin "Show Deck"`, to start it. Do the
+same again to stop it. The command line says "Show Deck feedback running" or
+"stopped".
+
 While it runs, the app shows on each column:
 
 - the executor's name (yours from the app take priority);

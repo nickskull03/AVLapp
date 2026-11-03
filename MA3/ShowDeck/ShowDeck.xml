@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GMA3 DataVersion="2.0.2.0">
+  <UserPlugin Name="Show Deck" Author="Show Deck" Version="1.0.0.0" Path="ShowDeck">
+    <ComponentLua Name="ShowDeckFeedback" FileName="ShowDeckFeedback.lua"/>
+  </UserPlugin>
+</GMA3>
