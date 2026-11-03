@@ -15,7 +15,10 @@ final class EosDriver: ConsoleDriver {
         ControlDescriptor("stopback", "Stop/Back", .trigger),
         ControlDescriptor("pageup", "Fader page +", .trigger),
         ControlDescriptor("pagedown", "Fader page −", .trigger),
-        ControlDescriptor("command", "Command", .command)
+        ControlDescriptor("goto", "Go to cue", .command(hint: "Cue number, or list/cue: 5 or 2/5")),
+        ControlDescriptor("cuetime", "Set cue time", .command(hint: "Cue and seconds: 5 3")),
+        ControlDescriptor("update", "Update cue", .command(hint: "Cue number: updates it with your changes"), needsConfirmation: true),
+        ControlDescriptor("command", "Command", .command(hint: "Any Eos command, e.g. Chan 1 At Full"))
     ]
     let traits = DriverTraits(reportsChanges: true, readsNames: true)
 
@@ -61,6 +64,21 @@ final class EosDriver: ConsoleDriver {
         case ("stopback", .trigger): osc("\(base)/key/stop_back", [.float(1)]); osc("\(base)/key/stop_back", [.float(0)]); return
         case ("pageup", .trigger): osc("\(base)/fader/1/page/1"); return
         case ("pagedown", .trigger): osc("\(base)/fader/1/page/-1"); return
+        case ("goto", .text(let text)):
+            // "5" fires cue 5 in list 1; "2/5" fires cue 5 in list 2.
+            let parts = text.trimmingCharacters(in: .whitespaces).split(separator: "/").map(String.init)
+            guard (1...2).contains(parts.count), parts.allSatisfy({ GrandMA3Driver.cueNumber($0) != nil }) else { return }
+            osc(parts.count == 2 ? "\(base)/cue/\(parts[0])/\(parts[1])/fire" : "\(base)/cue/1/\(parts[0])/fire")
+            return
+        case ("cuetime", .text(let text)):
+            let words = text.split(separator: " ").map(String.init)
+            guard words.count == 2, let cue = GrandMA3Driver.cueNumber(words[0]), Double(words[1]) != nil else { return }
+            osc("\(base)/cmd", [.string("Cue \(cue) Time \(words[1])#")])
+            return
+        case ("update", .text(let text)):
+            guard let cue = GrandMA3Driver.cueNumber(text) else { return }
+            osc("\(base)/cmd", [.string("Update Cue \(cue)#")])
+            return
         case ("command", .text(let text)):
             let trimmed = text.trimmingCharacters(in: .whitespaces)
             if !trimmed.isEmpty { osc("\(base)/cmd", [.string(trimmed + "#")]) } // # = Enter
@@ -119,6 +137,13 @@ final class EosDriver: ConsoleDriver {
         for packet in framer.feed(data) {
             for message in OSCMessage.decode(packet) {
                 let parts = message.address.split(separator: "/")
+                // eos out active|pending cue text: what's running and what's next
+                if parts.count == 5, parts[0] == "eos", parts[1] == "out", parts[3] == "cue", parts[4] == "text",
+                   parts[2] == "active" || parts[2] == "pending" {
+                    let text = message.arguments.first?.string ?? ""
+                    sink.info("device.cue.\(parts[2])", text.isEmpty ? nil : text)
+                    continue
+                }
                 // eos out fader 1 <n> [name]
                 guard parts.count >= 5, parts[0] == "eos", parts[1] == "out", parts[2] == "fader", parts[3] == "1",
                       let n = Int(parts[4]), (1...count).contains(n) else { continue }

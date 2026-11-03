@@ -3,12 +3,13 @@ import SwiftUI
 
 struct DevicesView: View {
     @Environment(Show.self) private var show
+    @AppStorage("appMode") private var mode = AppMode.both
     @State private var editing: DeviceConfig?
     @State private var adding = false
 
     var body: some View {
         List {
-            ForEach(show.devices) { device in
+            ForEach(show.devices.filter { mode.allows($0.kind.domain) }) { device in
                 HStack {
                     Image(systemName: device.kind.domain == .audio ? "speaker.wave.2" : "lightbulb")
                         .foregroundStyle(.secondary)
@@ -32,29 +33,50 @@ struct DevicesView: View {
                 .onTapGesture { editing = device.config }
             }
             .onDelete { offsets in
-                for i in offsets { show.removeDevice(show.devices[i].id) }
+                let visible = show.devices.filter { mode.allows($0.kind.domain) }
+                for i in offsets { show.removeDevice(visible[i].id) }
             }
-            .onMove { show.moveDevices(from: $0, to: $1) }
+            .onMove { source, destination in
+                // Reordering is only exact when everything is shown.
+                if mode == .both { show.moveDevices(from: source, to: destination) }
+            }
         }
         .navigationTitle("Devices")
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { EditButton() }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Show", selection: $mode) {
+                        ForEach(AppMode.allCases) { Text($0.title).tag($0) }
+                    }
+                } label: {
+                    Label(mode.title, systemImage: mode == .both ? "rectangle.split.2x1" : mode == .lighting ? "lightbulb" : "speaker.wave.2")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
-                    Section("Sound") {
-                        ForEach(DeviceKind.allCases.filter { $0.domain == .audio }) { kind in
-                            Button(kind.title) { editing = DeviceConfig(kind: kind) }
+                    if mode.allows(.audio) {
+                        Section("Sound") {
+                            ForEach(DeviceKind.allCases.filter { $0.domain == .audio }) { kind in
+                                Button(kind.title) { editing = DeviceConfig(kind: kind) }
+                            }
                         }
                     }
-                    Section("Lights") {
-                        ForEach(DeviceKind.allCases.filter { $0.domain == .lighting }) { kind in
-                            Button(kind.title) { editing = DeviceConfig(kind: kind) }
+                    if mode.allows(.lighting) {
+                        Section("Lights") {
+                            ForEach(DeviceKind.allCases.filter { $0.domain == .lighting }) { kind in
+                                Button(kind.title) { editing = DeviceConfig(kind: kind) }
+                            }
                         }
                     }
                 } label: {
                     Label("Add device", systemImage: "plus")
                 }
             }
+        }
+        .onChange(of: mode) { _, mode in
+            // Hidden devices shouldn't be controlling anything.
+            for device in show.devices where !mode.allows(device.kind.domain) { device.disconnect() }
         }
         .overlay {
             if show.devices.isEmpty {
@@ -132,9 +154,23 @@ struct DeviceEditor: View {
             if config.kind.usesPlaybackRange {
                 Section("Faders") {
                     if config.kind != .etcEos {
-                        NumberField(title: config.kind == .grandMA3 ? "First executor" : "First playback", value: $config.firstNumber)
+                        NumberField(title: config.kind == .grandMA3 ? "First column (x01–x90)" : "First playback", value: $config.firstNumber)
                     }
-                    Stepper("Show \(config.count)", value: $config.count, in: 1...(config.kind == .chamsysMagicQ ? 10 : 90))
+                    Stepper(config.kind == .grandMA3 ? "Columns \(config.count)" : "Show \(config.count)",
+                            value: $config.count, in: 1...(config.kind == .chamsysMagicQ ? 10 : 90))
+                    if config.kind == .grandMA3 {
+                        ForEach([4, 3, 2, 1], id: \.self) { row in
+                            Toggle(Self.rowTitle(row), isOn: Binding(
+                                get: { config.executorRows.contains(row) },
+                                set: { on in
+                                    var rows = Set(config.executorRows)
+                                    if on { rows.insert(row) } else { rows.remove(row) }
+                                    if !rows.isEmpty { config.executorRows = rows.sorted() }
+                                }
+                            ))
+                        }
+                        Toggle("Follow the desk's page", isOn: $config.followDeskPage)
+                    }
                     if config.kind == .etcEos {
                         Stepper("OSC user \(config.user)", value: $config.user, in: 0...99)
                     }
@@ -185,6 +221,16 @@ struct DeviceEditor: View {
                 }
                 .disabled(config.name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+        }
+    }
+}
+
+extension DeviceEditor {
+    static func rowTitle(_ row: Int) -> String {
+        switch row {
+        case 1: return "Row 1xx: key under the fader"
+        case 2: return "Row 2xx: fader and its key"
+        default: return "Row \(row)xx: knob and key"
         }
     }
 }

@@ -12,7 +12,7 @@ final class BehringerDriverTests: XCTestCase {
 
         net.last.becomeReady()
         XCTAssertEqual(sink.states.last, .connecting) // UDP being "ready" proves nothing
-        XCTAssertEqual(net.last.sentOSC.map(\.address), ["/xremote", "/xinfo"])
+        XCTAssertEqual(net.last.sentOSC.map(\.address), ["/xremote", "/xinfo", "/meters"])
 
         net.last.clear()
         net.last.reply(OSCMessage("/xinfo", [.string("10.0.0.5"), .string("X32"), .string("X32"), .string("4.06")]))

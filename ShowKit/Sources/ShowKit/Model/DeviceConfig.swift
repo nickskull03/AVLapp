@@ -17,7 +17,7 @@ public struct DeviceConfig: Codable, Identifiable, Equatable, Sendable {
     public var feedbackPort: Int
     /// grandMA3 page.
     public var page: Int
-    /// First executor/playback/fader shown.
+    /// First playback/fader shown; for grandMA3, the first column (x01–x90).
     public var firstNumber: Int
     public var count: Int
     /// grandMA3 "Fader Range": the value that means full.
@@ -27,6 +27,13 @@ public struct DeviceConfig: Codable, Identifiable, Equatable, Sendable {
     /// Art-Net universe, 0–32767 (net, sub-net and universe combined).
     public var universe: Int
     public var autoConnect: Bool
+    /// grandMA3: which executor rows each column shows (1 = 1xx under the
+    /// fader, 2 = 2xx fader, 3 and 4 = the knob rows above).
+    public var executorRows: [Int]
+    /// grandMA3: follow the page the desk is on (needs the Show Deck plugin).
+    public var followDeskPage: Bool
+    /// Names, colours and button actions the user gave strips, by strip ID.
+    public var customizations: [String: StripCustomization]
 
     public init(kind: DeviceKind, name: String? = nil, host: String = "") {
         id = UUID()
@@ -40,7 +47,7 @@ public struct DeviceConfig: Codable, Identifiable, Equatable, Sendable {
         feedbackPort = kind == .chamsysMagicQ ? 9000 : 8001
         page = 1
         switch kind {
-        case .grandMA3: firstNumber = 201; count = 15
+        case .grandMA3: firstNumber = 1; count = 15
         case .chamsysMagicQ: firstNumber = 1; count = 10
         case .etcEos: firstNumber = 1; count = 10
         case .artNet: firstNumber = 1; count = 24
@@ -50,6 +57,9 @@ public struct DeviceConfig: Codable, Identifiable, Equatable, Sendable {
         user = 2
         universe = 0
         autoConnect = true
+        executorRows = [1, 2]
+        followDeskPage = true
+        customizations = [:]
     }
 
     // Decode field by field so shows saved by older versions still open.
@@ -72,11 +82,26 @@ public struct DeviceConfig: Codable, Identifiable, Equatable, Sendable {
         user = try c.decodeIfPresent(Int.self, forKey: .user) ?? user
         universe = try c.decodeIfPresent(Int.self, forKey: .universe) ?? universe
         autoConnect = try c.decodeIfPresent(Bool.self, forKey: .autoConnect) ?? autoConnect
+        executorRows = try c.decodeIfPresent([Int].self, forKey: .executorRows) ?? executorRows
+        followDeskPage = try c.decodeIfPresent(Bool.self, forKey: .followDeskPage) ?? followDeskPage
+        customizations = try c.decodeIfPresent([String: StripCustomization].self, forKey: .customizations) ?? customizations
+        // Older versions counted grandMA3 strips from executor 201; now they're columns.
+        if kind == .grandMA3 && firstNumber > 100 { firstNumber %= 100 }
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, name, host, port, variant, midiChannel, oscPrefix, feedbackPort
         case page, firstNumber, count, faderRange, user, universe, autoConnect
+        case executorRows, followDeskPage, customizations
+    }
+
+    /// Everything except customizations: when only those change, the
+    /// connection doesn't need to be rebuilt.
+    func sameConnection(as other: DeviceConfig) -> Bool {
+        var a = self, b = other
+        a.customizations = [:]
+        b.customizations = [:]
+        return a == b
     }
 
     var trimmedHost: String { host.trimmingCharacters(in: .whitespacesAndNewlines) }

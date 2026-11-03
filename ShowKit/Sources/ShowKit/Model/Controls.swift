@@ -71,6 +71,70 @@ public enum ToggleRole: String, Sendable {
     case mute
     /// `true` means all lights out.
     case blackout
+    /// `true` means switched in: EQ on, gate on, high-pass on.
+    case enable
+}
+
+/// The range and feel of an adjustable setting, like an EQ frequency or a gate
+/// threshold. Values travel as `.level(position)` with position 0...1; the
+/// spec turns that into real units for display and for drivers.
+public struct ParameterSpec: Equatable, Sendable {
+    public enum Curve: Equatable, Sendable {
+        case linear
+        /// Equal steps are equal ratios, as for frequencies and times.
+        case logarithmic
+    }
+
+    /// The value at position 0. May be larger than `max` (a Q that narrows as you turn up).
+    public let min: Double
+    /// The value at position 1.
+    public let max: Double
+    public let unit: String
+    public let curve: Curve
+    public let decimals: Int
+
+    public init(_ min: Double, _ max: Double, unit: String = "", curve: Curve = .linear, decimals: Int = 1) {
+        self.min = min
+        self.max = max
+        self.unit = unit
+        self.curve = curve
+        self.decimals = decimals
+    }
+
+    public func value(at position: Double) -> Double {
+        let p = Swift.min(1, Swift.max(0, position))
+        switch curve {
+        case .linear:
+            return min + (max - min) * p
+        case .logarithmic:
+            guard min > 0, max > 0 else { return min + (max - min) * p }
+            return min * pow(max / min, p)
+        }
+    }
+
+    public func position(for value: Double) -> Double {
+        let p: Double
+        switch curve {
+        case .linear:
+            p = max == min ? 0 : (value - min) / (max - min)
+        case .logarithmic:
+            guard min > 0, max > 0, value > 0, max != min else { return 0 }
+            p = log(value / min) / log(max / min)
+        }
+        return Swift.min(1, Swift.max(0, p))
+    }
+
+    public func text(at position: Double) -> String {
+        var v = value(at: position)
+        var unit = self.unit
+        if unit == "Hz" && abs(v) >= 1000 {
+            v /= 1000
+            unit = "kHz"
+        }
+        let digits = unit == "kHz" ? 2 : decimals
+        let number = String(format: "%.\(digits)f", v)
+        return unit.isEmpty ? number : "\(number) \(unit)"
+    }
 }
 
 public enum ControlKind: Equatable, Sendable {
@@ -82,8 +146,12 @@ public enum ControlKind: Equatable, Sendable {
     case momentary
     /// Sends a number from the range, e.g. a scene.
     case number(ClosedRange<Int>)
-    /// Sends a line of text.
-    case command
+    /// Sends a line of text. The hint says what to type.
+    case command(hint: String)
+    /// An adjustable setting: EQ, dynamics, gain, a knob.
+    case parameter(ParameterSpec)
+    /// One of a list, sent as `.number(index)`.
+    case choice([String])
 }
 
 public struct ControlDescriptor: Identifiable, Equatable, Sendable {
@@ -101,31 +169,109 @@ public struct ControlDescriptor: Identifiable, Equatable, Sendable {
     }
 }
 
+/// Settings that belong together in a strip's detail, like "EQ" or "Gate".
+public struct ControlSection: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let title: String
+    public let controls: [ControlDescriptor]
+    /// Shown under the title, e.g. what the console can't do.
+    public let note: String?
+
+    public init(id: String, title: String, controls: [ControlDescriptor], note: String? = nil) {
+        self.id = id
+        self.title = title
+        self.controls = controls
+        self.note = note
+    }
+}
+
 public enum StripStyle: String, Sendable {
     case input, fx, bus, master, dca, muteGroup, playback, dimmer
 }
 
-/// A channel strip, playback or dimmer: one fader and the buttons that go with it.
+/// A channel strip, playback column or dimmer.
+///
+///     name
+///     gain             (on the strip, if any)
+///     buttons          (above the fader)
+///     fader | meters
+///     lowerButtons     (under the fader)
+///
+/// `sections` hold the rest (EQ, dynamics, cue tools), shown in the strip's detail.
 public struct Strip: Identifiable, Equatable, Sendable {
     /// Unique within the device, e.g. "ch.1".
     public let id: String
     public let defaultName: String
     public let style: StripStyle
     public let fader: ControlDescriptor?
-    /// Shown above the fader, top to bottom.
     public let buttons: [ControlDescriptor]
+    public let lowerButtons: [ControlDescriptor]
+    public let gain: ControlDescriptor?
+    public let sections: [ControlSection]
+    /// The console reports signal levels for this strip.
+    public let hasInputMeter: Bool
+    public let hasOutputMeter: Bool
 
-    public init(id: String, name: String, style: StripStyle, fader: ControlDescriptor?, buttons: [ControlDescriptor] = []) {
+    public init(id: String, name: String, style: StripStyle, fader: ControlDescriptor?,
+                buttons: [ControlDescriptor] = [], lowerButtons: [ControlDescriptor] = [],
+                gain: ControlDescriptor? = nil, sections: [ControlSection] = [],
+                hasInputMeter: Bool = false, hasOutputMeter: Bool = false) {
         self.id = id
         self.defaultName = name
         self.style = style
         self.fader = fader
         self.buttons = buttons
+        self.lowerButtons = lowerButtons
+        self.gain = gain
+        self.sections = sections
+        self.hasInputMeter = hasInputMeter
+        self.hasOutputMeter = hasOutputMeter
     }
 
+    /// Everything on the strip and in its detail.
     public var controls: [ControlDescriptor] {
-        (fader.map { [$0] } ?? []) + buttons
+        (fader.map { [$0] } ?? []) + (gain.map { [$0] } ?? []) + buttons + lowerButtons + sections.flatMap(\.controls)
     }
+}
+
+/// Signal levels for a strip, as positions on a meter (0 = −60 dB or below, 1 = 0 dBFS).
+public struct MeterReading: Equatable, Sendable {
+    public var input: Double?
+    public var output: Double?
+
+    public init(input: Double? = nil, output: Double? = nil) {
+        self.input = input
+        self.output = output
+    }
+
+    /// The meter scale the app draws: −60 dB to 0 dBFS.
+    public static func position(decibels: Double) -> Double {
+        Swift.min(1, Swift.max(0, (decibels + 60) / 60))
+    }
+
+    /// From a linear amplitude (1.0 = 0 dBFS).
+    public static func position(amplitude: Double) -> Double {
+        amplitude <= 0 ? 0 : position(decibels: 20 * log10(amplitude))
+    }
+}
+
+/// How the user has made a strip their own: saved with the device.
+public struct StripCustomization: Codable, Equatable, Sendable {
+    public var name: String?
+    /// One of `StripCustomization.colors`.
+    public var color: String?
+    /// Control ID → action ID, for consoles whose buttons can do different things.
+    public var actions: [String: String]
+
+    public init(name: String? = nil, color: String? = nil, actions: [String: String] = [:]) {
+        self.name = name
+        self.color = color
+        self.actions = actions
+    }
+
+    public static let colors = ["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink", "white"]
+
+    public var isEmpty: Bool { (name ?? "").isEmpty && color == nil && actions.isEmpty }
 }
 
 /// Strips that belong together, like "Inputs" or "DCAs".
@@ -171,9 +317,26 @@ public struct DriverTraits: Equatable, Sendable {
     public var reportsChanges: Bool
     /// Strip names come from the console.
     public var readsNames: Bool
+    /// Said once in a strip's detail, e.g. "SQ's MIDI protocol has no EQ or dynamics."
+    public var note: String?
+    /// What a button can be set to do, as (action ID, label), for consoles that
+    /// support it. Empty: buttons always do what the console has them do.
+    public var buttonActions: [ButtonAction]
 
-    public init(reportsChanges: Bool, readsNames: Bool) {
+    public init(reportsChanges: Bool, readsNames: Bool, note: String? = nil, buttonActions: [ButtonAction] = []) {
         self.reportsChanges = reportsChanges
         self.readsNames = readsNames
+        self.note = note
+        self.buttonActions = buttonActions
+    }
+}
+
+public struct ButtonAction: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let label: String
+
+    public init(_ id: String, _ label: String) {
+        self.id = id
+        self.label = label
     }
 }

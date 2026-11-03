@@ -7,17 +7,47 @@ itself when there's no lighting console. It's built on the design in
 
 ## What it controls
 
-| Device | Protocol | Faders | Buttons | Reads back from the desk |
+### Sound
+
+| Mixer | Protocol | Faders and mutes | Processing (tap a strip's name) | Gain on strip | Meters |
+|---|---|---|---|---|---|
+| Behringer X32 / Midas M32 | OSC, UDP 10023 | Inputs, aux ins, FX returns, buses, matrices, DCAs, mains, mute groups | High-pass, 4-band EQ, gate, compressor (inputs) | Preamp (local input n) | Inputs |
+| Behringer X Air / Midas MR | OSC, UDP 10024 | Inputs, aux in, FX returns and sends, buses, DCAs, main, mute groups | High-pass, 4-band EQ, gate, compressor (inputs) | Preamp | Inputs, buses, main |
+| Allen & Heath SQ | MIDI over TCP 51325 | Inputs, FX returns and groups (to LR), mixes, FX sends, matrices, DCAs, LR, mute groups | Not in SQ's MIDI protocol | – | – |
+| Allen & Heath dLive / Avantis | MIDI over TCP: MixRack 51325, Surface 51328 | Every strip type | High-pass, 4-band EQ (inputs). No gate or compressor over MIDI | Preamp (MixRack socket n) | – |
+| Yamaha TF / DM3 / CL / QL / DM7 | RCP text over TCP 49280 | Inputs, stereo inputs, FX returns, mixes, matrices, DCAs, stereo | Whatever the console reports: EQ, gate, compressor, high-pass | Head amp, where reported | Inputs (pre-fader) and outputs |
+
+Every mixer also does scene recall, reads channel names (not SQ), and follows
+changes made at the desk.
+
+Yamaha consoles name and scale their processing differently from family to
+family, so after connecting the app asks the console for its parameter list
+and builds the controls from what it says.
+
+### Lights
+
+| Console | Protocol | Strips | Buttons and tools | Reads back |
 |---|---|---|---|---|
-| Behringer X32 / Midas M32 | OSC, UDP 10023 | Inputs, aux ins, FX returns, buses, matrices, DCAs, mains | Mute, mute groups, scene recall | Levels, mutes, names |
-| Behringer X Air / Midas MR | OSC, UDP 10024 | Inputs, aux in, FX returns and sends, buses, DCAs, main | Mute, mute groups, snapshot load | Levels, mutes, names |
-| Allen & Heath SQ | MIDI over TCP 51325 | Inputs and FX returns and groups (to LR), mixes, FX sends, matrices, DCAs, LR | Mute, mute groups, scene recall | Levels, mutes |
-| Allen & Heath dLive / Avantis | MIDI over TCP: MixRack 51325, Surface 51328 | Every strip type | Mute, mute groups, scene recall | Levels, mutes, names |
-| Yamaha TF / DM3 / CL / QL / DM7 | RCP text over TCP 49280 | Inputs, stereo inputs, FX returns, mixes, matrices, DCAs, stereo | Mute (channel on), scene recall | Levels, mutes, names |
-| grandMA3 | OSC, UDP (8000) | Any page, any executor range | Go+, Go−, Flash, page, command line | Fader moves, when MA3 sends OSC |
+| grandMA3 | OSC, UDP (8000) | Executor columns on a page: the 1xx key under the fader, the 2xx fader and key, and the 3xx/4xx knobs and keys (you choose which rows) | Keys do what they do on the desk, or a fixed Go+, Go−, Toggle, On, Off, Top or Select. Cue tools: Go+, Go−, go to cue, set cue fade, update cue. Page, command line | With the [Show Deck plugin](MA3/README.md): names, running keys, current and next cue, faders, the desk's page |
 | ChamSys MagicQ | OSC, UDP (8000 in, 9000 out) | Playbacks 1–10 | Go, Stop, Flash | Playback levels, when TX is set |
-| ETC Eos family | OSC over TCP 3032 | An OSC fader bank | Fire, Stop, Go, Stop/Back, fader pages, command line | Levels and names |
+| ETC Eos family | OSC over TCP 3032 | An OSC fader bank | Fire, Stop, Go, Stop/Back, fader pages. Go to cue, set cue time, update cue, command line | Levels, names, active and pending cue |
 | Lights direct | Art-Net to a node's IP | One fader per DMX channel, plus a master | Blackout | (the app is the source) |
+
+### Customising strips
+
+Tap a strip's name to open its detail. There you can:
+- give the strip your own name and colour;
+- on grandMA3, choose what each key does;
+- set its processing or use its cue tools.
+
+Names and colours are saved with the device.
+
+### Lights only, sound only
+
+In **Devices**, the menu at the top right switches between **Lights & Sound**,
+**Lights only** and **Sound only**. The other half disappears from the Desk,
+the device list, adding devices and the cue editor, and its devices
+disconnect.
 
 **Desk tab:** the working surface. How many devices it shows depends on the
 space it has, not on the kind of device:
@@ -93,10 +123,12 @@ ShowKit/                      the engine: no UI, unit-tested
   Transport/   Transport protocol; UDP and TCP on Apple's Network framework
   Drivers/     one per console family, behind ConsoleDriver
 ShowDeck.swiftpm/             the SwiftUI app
+MA3/                          the grandMA3 plugin that sends names and cues to the app
 ```
 
-Adding a console means writing a `ConsoleDriver`: it declares its strips and
-controls, translates `ControlValue`s to and from the wire, and reports state.
+Adding a console means writing a `ConsoleDriver`: it declares its strips,
+controls and processing sections, translates `ControlValue`s to and from the
+wire, and reports values, meters and state.
 The UI, cues, sync and timing work for it without changes.
 
 ## Where the protocol details come from
@@ -107,8 +139,12 @@ reachable, and against the Bitfocus Companion modules for these consoles
 Yamaha's paths and counts come from the consoles' own parameter dumps.
 
 Still to confirm on real hardware:
+- X32 meters (the layout of `/meters/1` on the X32, as opposed to X Air);
+- Yamaha meter scaling (0–127 is drawn as-is) and which consoles answer `prminfo`;
+- grandMA3: OSC control of the 3xx/4xx knobs (sent as `Fader3nn`), and the
+  plugin's cue lookups;
 - MagicQ button addresses (`/pb/<n>/go`, `/stop`, `/flash`);
 - Eos key and fire addresses (`/key/go_0`, `/fader/1/<n>/fire`);
-- grandMA3's feedback format;
+- grandMA3's own (non-plugin) feedback format;
 - channel counts on smaller Yamaha models (strips a model lacks just don't answer);
 - DM7 scene recall (not offered yet).

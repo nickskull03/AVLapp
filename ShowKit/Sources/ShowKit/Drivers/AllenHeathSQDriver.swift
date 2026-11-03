@@ -13,7 +13,10 @@ final class AllenHeathSQDriver: ConsoleDriver {
     let sink = DriverSink()
     let groups: [StripGroup]
     let deviceControls = [ControlDescriptor("scene", "Recall scene", .number(1...300), needsConfirmation: true)]
-    let traits = DriverTraits(reportsChanges: true, readsNames: false)
+    let traits = DriverTraits(
+        reportsChanges: true, readsNames: false,
+        note: "SQ's MIDI protocol covers levels, mutes and scenes only: no EQ, dynamics, gain or meters."
+    )
 
     private enum Kind { case level, mute }
 

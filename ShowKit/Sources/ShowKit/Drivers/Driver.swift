@@ -10,6 +10,14 @@ public final class DriverSink {
     public var name: (String, String) -> Void = { _, _ in }
     /// The console's current state has been read; controls can be used.
     public var synced: () -> Void = {}
+    /// Signal levels, by strip ID. Only the strips that changed.
+    public var meters: ([String: MeterReading]) -> Void = { _ in }
+    /// Text the console reports, by key: "exec.201.cue" (current cue),
+    /// "exec.201.active" ("1" when running), "device.cue.active". nil clears it.
+    public var info: (String, String?) -> Void = { _, _ in }
+    /// `groups` or `deviceControls` changed (e.g. once a console has said
+    /// which processing it has).
+    public var layoutChanged: () -> Void = {}
 
     public init() {}
 }
@@ -28,6 +36,15 @@ public protocol ConsoleDriver: AnyObject {
     func start()
     func stop()
     func send(_ id: ControlID, _ value: ControlValue)
+    /// The user opened a strip's detail: read its processing now.
+    func detailOpened(_ stripID: String)
+    /// The user's names, colours and button actions changed.
+    func apply(customizations: [String: StripCustomization])
+}
+
+public extension ConsoleDriver {
+    func detailOpened(_ stripID: String) {}
+    func apply(customizations: [String: StripCustomization]) {}
 }
 
 public enum Drivers {

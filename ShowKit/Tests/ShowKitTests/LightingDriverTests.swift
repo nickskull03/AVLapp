@@ -15,7 +15,7 @@ final class GrandMA3DriverTests: XCTestCase {
         driver.send("command", .text(" Go+ Sequence 3 "))
         XCTAssertEqual(net.last.sentOSC, [
             OSCMessage("/gma3/Page2/Fader201", [.float(50)]),
-            OSCMessage("/gma3/cmd", [.string("Go+ Page 2.201")]),
+            OSCMessage("/gma3/cmd", [.string("Go+ Executor 2.201")]),
             OSCMessage("/gma3/Page2/Key202", [.int(1)]),
             OSCMessage("/gma3/Page2/Key202", [.int(0)]),
             OSCMessage("/gma3/cmd", [.string("Go+ Sequence 3")])

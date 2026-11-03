@@ -23,6 +23,16 @@ public final class StripState {
     init() {}
 }
 
+/// A strip's signal levels, observed on their own so meters redraw without
+/// redrawing anything else.
+@MainActor
+@Observable
+public final class MeterState {
+    public internal(set) var reading = MeterReading()
+
+    init() {}
+}
+
 /// One console as the app sees it. Sits between the UI and a driver and
 /// takes care of the things every console needs:
 ///
@@ -46,6 +56,9 @@ public final class Device: Identifiable {
     public private(set) var traits = DriverTraits(reportsChanges: false, readsNames: false)
     /// The user wants this device connected.
     public private(set) var isActive = false
+    /// What the console reports besides values: current cues, running states.
+    /// Keys as in `DriverSink.info`.
+    public private(set) var info: [String: String] = [:]
 
     /// Send at most this often per control while dragging.
     static let sendInterval: Duration = .milliseconds(33)
@@ -59,6 +72,7 @@ public final class Device: Identifiable {
     @ObservationIgnored private var driver: ConsoleDriver?
     @ObservationIgnored private var controls: [ControlID: ControlState] = [:]
     @ObservationIgnored private var strips: [String: StripState] = [:]
+    @ObservationIgnored private var meters: [String: MeterState] = [:]
     @ObservationIgnored private var outgoing: [ControlID: Outgoing] = [:]
     private let retry = Ticker()
     private let syncWatchdog = Ticker()
@@ -123,6 +137,12 @@ public final class Device: Identifiable {
 
     public func update(_ newConfig: DeviceConfig) {
         guard newConfig != config else { return }
+        if newConfig.sameConnection(as: config) {
+            // Only names, colours or button actions: no need to reconnect.
+            config = newConfig
+            driver?.apply(customizations: newConfig.customizations)
+            return
+        }
         config = newConfig
         let wasActive = isActive
         driver?.stop()
@@ -146,8 +166,26 @@ public final class Device: Identifiable {
         return created
     }
 
+    public func meterState(_ stripID: String) -> MeterState {
+        if let existing = meters[stripID] { return existing }
+        let created = MeterState()
+        meters[stripID] = created
+        return created
+    }
+
+    /// The user's name for the strip, else the console's, else the default.
     public func displayName(of strip: Strip) -> String {
-        stripState(strip.id).name ?? strip.defaultName
+        if let custom = config.customizations[strip.id]?.name, !custom.isEmpty { return custom }
+        return stripState(strip.id).name ?? strip.defaultName
+    }
+
+    public func customization(_ stripID: String) -> StripCustomization {
+        config.customizations[stripID] ?? StripCustomization()
+    }
+
+    /// The user opened a strip's detail: ask the console for its processing.
+    public func openDetail(_ stripID: String) {
+        driver?.detailOpened(stripID)
     }
 
     /// A fader move from a finger: throttled, final value guaranteed by `touch(_:false)`.
@@ -200,12 +238,35 @@ public final class Device: Identifiable {
         driver.sink.value = { [weak self] in self?.received($0, $1) }
         driver.sink.name = { [weak self] stripID, name in self?.stripState(stripID).name = name.isEmpty ? nil : name }
         driver.sink.synced = { [weak self] in self?.markSynced() }
+        driver.sink.meters = { [weak self] readings in
+            guard let self else { return }
+            // Merge: a report may carry only inputs or only outputs.
+            for (stripID, reading) in readings {
+                let state = self.meterState(stripID)
+                var merged = state.reading
+                if let input = reading.input { merged.input = input }
+                if let output = reading.output { merged.output = output }
+                if merged != state.reading { state.reading = merged }
+            }
+        }
+        driver.sink.info = { [weak self] key, text in
+            guard let self, self.info[key] != text else { return }
+            self.info[key] = text
+        }
+        driver.sink.layoutChanged = { [weak self, weak driver] in
+            guard let self, let driver, driver === self.driver else { return }
+            self.groups = driver.groups
+            self.deviceControls = driver.deviceControls
+        }
+        driver.apply(customizations: config.customizations)
         self.driver = driver
         groups = driver.groups
         deviceControls = driver.deviceControls
         traits = driver.traits
+        info = [:]
         controls.removeAll()
         strips.removeAll()
+        meters.removeAll()
         outgoing.values.forEach { $0.flushTask?.cancel() }
         outgoing.removeAll()
         isSynced = false

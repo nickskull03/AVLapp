@@ -10,7 +10,10 @@ struct ShowDeckApp: App {
         WindowGroup {
             RootView()
                 .environment(show)
-                .onAppear { show.connectAutomatically() }
+                .onAppear {
+                    let mode = AppMode(rawValue: UserDefaults.standard.string(forKey: "appMode") ?? "") ?? .both
+                    show.connectAutomatically { mode.allows($0.kind.domain) }
+                }
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {

@@ -85,12 +85,18 @@ final class SinkRecorder {
     var values: [ControlID: ControlValue] = [:]
     var names: [String: String] = [:]
     var synced = false
+    var meters: [String: MeterReading] = [:]
+    var info: [String: String] = [:]
+    var layoutChanges = 0
 
     init(_ driver: ConsoleDriver) {
         driver.sink.state = { [unowned self] in self.states.append($0) }
         driver.sink.value = { [unowned self] in self.values[$0] = $1 }
         driver.sink.name = { [unowned self] in self.names[$0] = $1 }
         driver.sink.synced = { [unowned self] in self.synced = true }
+        driver.sink.meters = { [unowned self] in self.meters.merge($0) { _, new in new } }
+        driver.sink.info = { [unowned self] in self.info[$0] = $1 }
+        driver.sink.layoutChanged = { [unowned self] in self.layoutChanges += 1 }
     }
 }
 

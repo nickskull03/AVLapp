@@ -96,8 +96,8 @@ public final class Show {
     }
 
     /// Connects every device marked to connect automatically.
-    public func connectAutomatically() {
-        for device in devices where device.config.autoConnect && !device.config.host.isEmpty {
+    public func connectAutomatically(where include: (DeviceConfig) -> Bool = { _ in true }) {
+        for device in devices where device.config.autoConnect && !device.config.host.isEmpty && include(device.config) {
             device.connect()
         }
     }

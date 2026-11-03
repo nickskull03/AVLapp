@@ -126,7 +126,7 @@ final class ShowTests: XCTestCase {
         let config = try JSONDecoder().decode(DeviceConfig.self, from: Data(json.utf8))
         XCTAssertEqual(config.host, "10.1.1.1")
         XCTAssertEqual(config.port, 8000)
-        XCTAssertEqual(config.firstNumber, 201)
+        XCTAssertEqual(config.firstNumber, 1) // grandMA3 columns start at x01
     }
 
     func testReordersLikeAList() {

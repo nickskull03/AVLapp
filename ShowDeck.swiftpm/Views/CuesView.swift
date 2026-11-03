@@ -133,10 +133,11 @@ struct CueEditor: View {
 struct StepPicker: View {
     @Environment(Show.self) private var show
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("appMode") private var mode = AppMode.both
     let onAdd: (CueStep) -> Void
 
     var body: some View {
-        List(show.devices) { device in
+        List(show.devices.filter { mode.allows($0.kind.domain) }) { device in
             NavigationLink {
                 ControlPicker(device: device) { step in
                     onAdd(step)
@@ -218,10 +219,22 @@ struct StepValueEditor: View {
             case .number(let range):
                 Stepper("\(control.label) \(number)", value: $number, in: range)
                     .onAppear { number = max(range.lowerBound, min(range.upperBound, number)) }
-            case .command:
-                TextField("Command", text: $text)
+            case .command(let hint):
+                TextField(hint, text: $text)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+            case .parameter(let spec):
+                Section {
+                    Slider(value: $position, in: 0...1)
+                    Text(spec.text(at: position)).monospacedDigit()
+                    Button("Use the current setting") { position = device.control(control.id).value?.level ?? position }
+                        .disabled(device.control(control.id).value?.level == nil)
+                }
+            case .choice(let options):
+                Picker(control.label, selection: $number) {
+                    ForEach(options.indices, id: \.self) { Text(options[$0]).tag($0) }
+                }
+                .onAppear { number = max(0, min(options.count - 1, number)) }
             case .trigger:
                 Text("Fires \(control.label) when the cue runs.")
             case .momentary:
@@ -236,9 +249,9 @@ struct StepValueEditor: View {
 
     private var value: ControlValue {
         switch control.kind {
-        case .fader: return .level(position)
+        case .fader, .parameter: return .level(position)
         case .toggle: return .on(on)
-        case .number: return .number(number)
+        case .number, .choice: return .number(number)
         case .command: return .text(text)
         case .trigger, .momentary: return .trigger
         }
@@ -252,6 +265,8 @@ struct StepValueEditor: View {
         case .toggle(let role):
             return "\(target) → " + (role == .mute ? (on ? "muted" : "unmuted") : (on ? "on" : "off"))
         case .number: return "\(target) \(number)"
+        case .parameter(let spec): return "\(target) → \(spec.text(at: position))"
+        case .choice(let options): return "\(target) → \(options.indices.contains(number) ? options[number] : "\(number)")"
         case .command: return "\(target): \(text)"
         case .trigger, .momentary: return target
         }

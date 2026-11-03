@@ -133,7 +133,8 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
                 "Menu › In & Out › OSC. Turn on Enable Input (and Enable Output for feedback).",
                 "Add a line: Destination IP = this device, Port = the app's port (8000), Prefix = the app's prefix (gma3).",
                 "Turn on Receive and Receive Command. Turn on Send and set its port to the app's Feedback port to see desk moves.",
-                "Set Fader Range on the line to match the app (100)."
+                "Set Fader Range on the line to match the app (100).",
+                "Optional: run the Show Deck plugin on the console (see MA3/README.md) to see executor names, running keys, current cues and the desk's page in the app."
             ]
         case .chamsysMagicQ:
             return [
