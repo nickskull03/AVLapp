@@ -13,6 +13,7 @@ itself when there's no lighting console. It's built on the design in
 |---|---|---|---|---|---|
 | Behringer X32 / Midas M32 | OSC, UDP 10023 | Inputs, aux ins, FX returns, buses, matrices, DCAs, mains, mute groups | High-pass, 4-band EQ, gate, compressor (inputs) | Preamp (local input n) | Inputs |
 | Behringer X Air / Midas MR | OSC, UDP 10024 | Inputs, aux in, FX returns and sends, buses, DCAs, main, mute groups | High-pass, 4-band EQ, gate, compressor (inputs) | Preamp | Inputs, buses, main |
+| Behringer Wing (Full, Compact, Rack) | OSC, UDP 2223 | Channels, aux ins, buses, matrices, DCAs, mains, mute groups | Low-cut; EQ, gate and compressor in/out (inputs) | Input gain | – |
 | Allen & Heath SQ | MIDI over TCP 51325 | Inputs, FX returns and groups (to LR), mixes, FX sends, matrices, DCAs, LR, mute groups | Not in SQ's MIDI protocol | – | – |
 | Allen & Heath dLive / Avantis | MIDI over TCP: MixRack 51325, Surface 51328 | Every strip type | High-pass, 4-band EQ (inputs). No gate or compressor over MIDI | Preamp (MixRack socket n) | – |
 | Yamaha TF / DM3 / CL / QL / DM7 | RCP text over TCP 49280 | Inputs, stereo inputs, FX returns, mixes, matrices, DCAs, stereo | Whatever the console reports: EQ, gate, compressor, high-pass | Head amp, where reported | Inputs (pre-fader) and outputs |
@@ -30,6 +31,7 @@ and builds the controls from what it says.
 |---|---|---|---|---|
 | grandMA3 | OSC, UDP (8000) | Executor columns on a page: the 1xx key under the fader, the 2xx fader and key, and the 3xx/4xx knobs and keys (you choose which rows) | Keys do what they do on the desk, or a fixed Go+, Go−, Toggle, On, Off, Top or Select. Cue tools: Go+, Go−, go to cue, set cue fade, update cue. Page, command line | With the [Show Deck plugin](MA3/README.md): names, running keys, current and next cue, faders, the desk's page |
 | ChamSys MagicQ | OSC, UDP (8000 in, 9000 out) | Playbacks 1–10 | Go, Stop, Flash | Playback levels, when TX is set |
+| Lighting (the desktop console in nickskull03/lighting) | Its WebSocket API, ws://host:8080/ws | The ten faders of the page it's on, plus the grand master | Go, Off, Flash, Blackout. Cue tools: Back, Pause, go to cue, set cue fade, store cue. Page, command line | Sequence names, levels, running and next cue, page, grand master, blackout, and its error messages |
 | ETC Eos family | OSC over TCP 3032 | An OSC fader bank | Fire, Stop, Go, Stop/Back, fader pages. Go to cue, set cue time, update cue, command line | Levels, names, active and pending cue |
 | Lights direct | Art-Net to a node's IP | One fader per DMX channel, plus a master | Blackout | (the app is the source) |
 
@@ -139,6 +141,8 @@ reachable, and against the Bitfocus Companion modules for these consoles
 Yamaha's paths and counts come from the consoles' own parameter dumps.
 
 Still to confirm on real hardware:
+- Wing: the low-cut frequency range, and replies to every query arriving as
+  ",sff" (the app also reads a single number or text);
 - X32 meters (the layout of `/meters/1` on the X32, as opposed to X Air);
 - Yamaha meter scaling (0–127 is drawn as-is) and which consoles answer `prminfo`;
 - grandMA3: OSC control of the 3xx/4xx knobs (sent as `Fader3nn`), and the
@@ -148,3 +152,10 @@ Still to confirm on real hardware:
 - grandMA3's own (non-plugin) feedback format;
 - channel counts on smaller Yamaha models (strips a model lacks just don't answer);
 - DM7 scene recall (not offered yet).
+
+## Connecting to the Lighting console
+
+The Lighting desktop app only listens on its own computer. To control it from
+an iPad, run the console with `npm start -- --host 0.0.0.0` in the lighting
+repository, and enter that computer's IP and port 8080 in Show Deck. There's
+no login, so only do this on a network you trust.

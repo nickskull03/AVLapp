@@ -52,12 +52,14 @@ public enum Drivers {
     public static func make(_ config: DeviceConfig, transport: TransportFactory) -> ConsoleDriver {
         switch config.kind {
         case .behringerX32, .behringerXAir: return BehringerDriver(config: config, transport: transport)
+        case .behringerWing: return WingDriver(config: config, transport: transport)
         case .allenHeathSQ: return AllenHeathSQDriver(config: config, transport: transport)
         case .allenHeathDLive: return AllenHeathDLiveDriver(config: config, transport: transport)
         case .yamahaRCP: return YamahaRCPDriver(config: config, transport: transport)
         case .grandMA3: return GrandMA3Driver(config: config, transport: transport)
         case .chamsysMagicQ: return MagicQDriver(config: config, transport: transport)
         case .etcEos: return EosDriver(config: config, transport: transport)
+        case .lightingConsole: return LightingConsoleDriver(config: config, transport: transport)
         case .artNet: return ArtNetDriver(config: config, transport: transport)
         }
     }

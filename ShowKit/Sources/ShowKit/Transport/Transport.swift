@@ -8,6 +8,9 @@ public enum TransportSpec: Equatable, Sendable {
     case udp(host: String, port: UInt16, listenPort: UInt16?)
     /// A byte stream. Framing is the driver's business.
     case tcp(host: String, port: UInt16)
+    /// A WebSocket, e.g. "ws://10.0.0.5:8080/ws". One `onReceive` per message;
+    /// `send` sends text messages.
+    case webSocket(url: String)
 }
 
 public enum TransportState: Equatable, Sendable {

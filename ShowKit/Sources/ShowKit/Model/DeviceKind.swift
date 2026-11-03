@@ -5,6 +5,7 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
     // Sound
     case behringerX32
     case behringerXAir
+    case behringerWing
     case allenHeathSQ
     case allenHeathDLive
     case yamahaRCP
@@ -12,6 +13,7 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case grandMA3
     case chamsysMagicQ
     case etcEos
+    case lightingConsole
     case artNet
 
     public var id: String { rawValue }
@@ -20,12 +22,14 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .behringerX32: return "Behringer X32 / Midas M32"
         case .behringerXAir: return "Behringer X Air / Midas MR"
+        case .behringerWing: return "Behringer Wing"
         case .allenHeathSQ: return "Allen & Heath SQ"
         case .allenHeathDLive: return "Allen & Heath dLive / Avantis"
         case .yamahaRCP: return "Yamaha TF / DM3 / CL / QL / DM7"
         case .grandMA3: return "grandMA3"
         case .chamsysMagicQ: return "ChamSys MagicQ"
         case .etcEos: return "ETC Eos family"
+        case .lightingConsole: return "Lighting (desktop console)"
         case .artNet: return "Lights direct (Art-Net DMX)"
         }
     }
@@ -34,20 +38,22 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .behringerX32: return "X32"
         case .behringerXAir: return "X Air"
+        case .behringerWing: return "Wing"
         case .allenHeathSQ: return "SQ"
         case .allenHeathDLive: return "dLive"
         case .yamahaRCP: return "Yamaha"
         case .grandMA3: return "MA3"
         case .chamsysMagicQ: return "MagicQ"
         case .etcEos: return "Eos"
+        case .lightingConsole: return "Lighting"
         case .artNet: return "DMX"
         }
     }
 
     public var domain: Domain {
         switch self {
-        case .behringerX32, .behringerXAir, .allenHeathSQ, .allenHeathDLive, .yamahaRCP: return .audio
-        case .grandMA3, .chamsysMagicQ, .etcEos, .artNet: return .lighting
+        case .behringerX32, .behringerXAir, .behringerWing, .allenHeathSQ, .allenHeathDLive, .yamahaRCP: return .audio
+        case .grandMA3, .chamsysMagicQ, .etcEos, .lightingConsole, .artNet: return .lighting
         }
     }
 
@@ -55,12 +61,14 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .behringerX32: return 10023
         case .behringerXAir: return 10024
+        case .behringerWing: return 2223
         case .allenHeathSQ: return 51325
         case .allenHeathDLive: return 51325 // MixRack; the Surface is 51328
         case .yamahaRCP: return 49280
         case .grandMA3: return 8000
         case .chamsysMagicQ: return 8000
         case .etcEos: return 3032
+        case .lightingConsole: return 8080
         case .artNet: return 6454
         }
     }
@@ -110,6 +118,11 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
                 "Join the mixer's network, or put it on yours (X Air Edit › Setup › Network).",
                 "Enter the mixer's IP. Port 10024 is fixed."
             ]
+        case .behringerWing:
+            return [
+                "Enter the Wing's IP (Setup › Network on the console). Port 2223 is fixed.",
+                "The Wing sends its changes to one app at a time: close Companion or other OSC apps that subscribe to it."
+            ]
         case .allenHeathSQ:
             return [
                 "On the SQ: Setup › Control › MIDI. Note the MIDI channel (default 1).",
@@ -146,6 +159,12 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
                 "Setup › System › Show Control › OSC: turn on OSC RX and OSC TX.",
                 "Set OSC TCP Format to OSC 1.0 (the default). The app connects to TCP port 3032.",
                 "Pick an OSC user number other than the main desk's (e.g. 2) so the app has its own command line."
+            ]
+        case .lightingConsole:
+            return [
+                "Start the console so other devices can reach it: run \"npm start -- --host 0.0.0.0\" on the computer running it (the desktop app only listens on that computer).",
+                "Enter that computer's IP and the console's port (8080 unless you changed it).",
+                "There's no login: only do this on a network you trust."
             ]
         case .artNet:
             return [

@@ -445,6 +445,12 @@ struct DeviceControlsBar: View {
                 }
                 .padding(.vertical, 2)
             }
+            if let message = device.info["device.message"] {
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+            }
             if device.info["device.cue.active"] != nil || device.info["device.cue.pending"] != nil {
                 HStack(spacing: 12) {
                     if let active = device.info["device.cue.active"] { Label(active, systemImage: "play.fill") }

@@ -11,6 +11,8 @@ public enum NetworkTransports {
             return UDPTransport(host: host, port: port, listenPort: listenPort)
         case let .tcp(host, port):
             return TCPTransport(host: host, port: port)
+        case let .webSocket(url):
+            return WebSocketTransport(url: URL(string: url))
         }
     }
 }
@@ -198,6 +200,102 @@ final class TCPTransport: Transport {
                 }
             }
         }
+    }
+}
+/// A WebSocket on URLSession. Pings every 5 s, so a console that's gone away
+/// shows as failed rather than hanging.
+@MainActor
+final class WebSocketTransport: NSObject, Transport, URLSessionWebSocketDelegate {
+    var onState: (TransportState) -> Void = { _ in }
+    var onReceive: (Data) -> Void = { _ in }
+
+    private let url: URL?
+    private var session: URLSession?
+    private var task: URLSessionWebSocketTask?
+    private let pinger = Ticker()
+
+    init(url: URL?) {
+        self.url = url
+    }
+
+    func open() {
+        close()
+        guard let url, url.host != nil, url.host != "" else {
+            onState(.failed("Set the console's IP address"))
+            return
+        }
+        onState(.opening)
+        let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        let task = session.webSocketTask(with: url)
+        task.maximumMessageSize = 64 << 20 // a whole show can arrive in one message
+        self.session = session
+        self.task = task
+        task.resume()
+        receive(on: task)
+    }
+
+    func close() {
+        pinger.stop()
+        task?.cancel(with: .goingAway, reason: nil)
+        task = nil
+        session?.invalidateAndCancel()
+        session = nil
+        onState(.idle)
+    }
+
+    func send(_ data: Data) {
+        task?.send(.string(String(decoding: data, as: UTF8.self))) { _ in }
+    }
+
+    private func fail(_ reason: String, task failed: URLSessionWebSocketTask) {
+        guard failed === task else { return }
+        pinger.stop()
+        task?.cancel(with: .abnormalClosure, reason: nil)
+        task = nil
+        onState(.failed(reason))
+    }
+
+    private func receive(on task: URLSessionWebSocketTask) {
+        task.receive { [weak self] result in
+            Task { @MainActor in
+                guard let self, task === self.task else { return }
+                switch result {
+                case .success(let message):
+                    switch message {
+                    case .string(let text): self.onReceive(Data(text.utf8))
+                    case .data(let data): self.onReceive(data)
+                    @unknown default: break
+                    }
+                    self.receive(on: task)
+                case .failure(let error):
+                    self.fail(error.localizedDescription, task: task)
+                }
+            }
+        }
+    }
+
+    nonisolated func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
+        Task { @MainActor in
+            guard webSocketTask === self.task else { return }
+            self.onState(.ready)
+            self.pinger.start(every: 5) { [weak self] in
+                guard let self, let task = self.task else { return }
+                task.sendPing { error in
+                    guard let error else { return }
+                    Task { @MainActor in self.fail(error.localizedDescription, task: task) }
+                }
+            }
+        }
+    }
+
+    nonisolated func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
+                                didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        Task { @MainActor in self.fail("The console closed the connection", task: webSocketTask) }
+    }
+
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let error, let socket = task as? URLSessionWebSocketTask else { return }
+        Task { @MainActor in self.fail(error.localizedDescription, task: socket) }
     }
 }
 #endif
