@@ -7,7 +7,7 @@ final class GrandMA3DriverTests: XCTestCase {
         let net = FakeNetwork()
         let driver = Drivers.make(config(.grandMA3) { $0.page = 2 }, transport: net.factory)
         driver.start()
-        XCTAssertEqual(net.last.spec, .udp(host: "10.0.0.5", port: 8000, listenPort: 8001))
+        XCTAssertEqual(net.last.spec, .udp(host: "10.0.0.5", port: 8000, listenPort: 8000))
         driver.send("exec.201.level", .level(0.5))
         driver.send("exec.201.go", .trigger)
         driver.send("exec.202.key", .press(true))

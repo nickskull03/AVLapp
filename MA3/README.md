@@ -45,8 +45,13 @@ unless you change `OSC_LINE` at the top of the plugin):
 - **Port:** the app's port (8000)
 - **Prefix:** the app's prefix (`gma3`)
 - **Receive** and **Receive Command:** on
-- **Send:** on, with the app's **Feedback port** (8001)
+- **Send:** on
 - **Enable Input** and **Enable Output**: on
+
+An OSC line uses **one port for both directions**, so MA sends to the iPad on
+port 8000 too. In the app's grandMA3 device settings, **Feedback port** must be
+**8000**, the same as the line's port. Devices added before this fix have 8001
+there; change it to 8000.
 
 ## Run
 
@@ -88,7 +93,8 @@ newly connected iPad catches up.
 - **The plugin is empty after importing:** use `Import Plugin Library …` as
   above, and check both files are directly in `datapools/plugins`.
 - **"Show Deck feedback running" appears but the app shows nothing:** check
-  the OSC line's Send is on, its destination is the iPad, and Enable Output is on.
+  the app's Feedback port matches the OSC line's port (8000), the line's Send
+  is on, its Destination IP is the iPad's, and Enable Output is on.
 - **Names show but no cues:** tell us your exact MA version. The plugin reads
   the sequence's CueNo, CueName and CurrentCue properties, as grandMA3 2.5 has them.
 

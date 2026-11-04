@@ -44,7 +44,8 @@ public struct DeviceConfig: Codable, Identifiable, Equatable, Sendable {
         variant = kind.variants.first?.id ?? ""
         midiChannel = 1
         oscPrefix = "gma3"
-        feedbackPort = kind == .chamsysMagicQ ? 9000 : 8001
+        // grandMA3 sends on the same port its OSC line receives on; MagicQ has its own TX port.
+        feedbackPort = kind == .chamsysMagicQ ? 9000 : 8000
         page = 1
         switch kind {
         case .grandMA3: firstNumber = 1; count = 15
