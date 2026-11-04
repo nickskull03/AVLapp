@@ -229,7 +229,8 @@ final class YamahaRCPDriver: ConsoleDriver {
                     if section.id == "gain" {
                         gain = controls.first.map { ControlDescriptor($0.id, "Gain", $0.kind) }
                     } else if !controls.isEmpty {
-                        sections.append(ControlSection(id: section.id, title: section.title, controls: controls))
+                        sections.append(ControlSection(id: section.id, title: section.title, controls: controls,
+                                                       eq: section.id == "eq" ? eqLayout(section.params, strip: id) : nil))
                     }
                 }
                 return Strip(
@@ -248,6 +249,23 @@ final class YamahaRCPDriver: ConsoleDriver {
             }
         }
         return grouped.map { StripGroup(id: $0.0, title: $0.0, strips: $0.1) }
+    }
+
+    /// The bands the console reported (Freq, Gain and Q with one value per band), as peaking filters.
+    private static func eqLayout(_ params: [ParameterInfo], strip id: String) -> EQLayout? {
+        func find(_ name: String) -> ParameterInfo? { params.first { $0.name == name && $0.yCount > 1 } }
+        guard let freq = find("Freq") else { return nil }
+        let gain = find("Gain")
+        let q = find("Q")
+        let on = params.first { $0.name == "On" && $0.yCount <= 1 }
+        func control(_ info: ParameterInfo?, _ y: Int) -> ControlID? {
+            info.map { ControlID("\(id).\(suffix($0, section: "eq", y: y))") }
+        }
+        let bands = (0..<freq.yCount).compactMap { y -> EQBand? in
+            guard let frequency = control(freq, y) else { return nil }
+            return EQBand(label: "\(y + 1)", frequency: frequency, gain: control(gain, y), q: control(q, y), shapes: [.peak])
+        }
+        return EQLayout(on: control(on, 0), bands: bands)
     }
 
     static func suffix(_ info: ParameterInfo, section: String, y: Int) -> String {

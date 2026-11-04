@@ -176,12 +176,57 @@ public struct ControlSection: Identifiable, Equatable, Sendable {
     public let controls: [ControlDescriptor]
     /// Shown under the title, e.g. what the console can't do.
     public let note: String?
+    /// For an EQ section: which controls are which band, so it can be drawn as a curve.
+    public let eq: EQLayout?
 
-    public init(id: String, title: String, controls: [ControlDescriptor], note: String? = nil) {
+    public init(id: String, title: String, controls: [ControlDescriptor], note: String? = nil, eq: EQLayout? = nil) {
         self.id = id
         self.title = title
         self.controls = controls
         self.note = note
+        self.eq = eq
+    }
+}
+
+/// The shape of an EQ band's filter.
+public enum FilterShape: String, Sendable {
+    case peak, lowShelf, highShelf, lowCut, highCut
+}
+
+/// One EQ band: the controls behind it, so the curve can be drawn and dragged.
+public struct EQBand: Equatable, Sendable {
+    public let label: String
+    public let frequency: ControlID
+    /// nil for bands with no gain (cuts).
+    public let gain: ControlID?
+    /// A `.parameter` (Q), or a `.choice` of bandwidths in octaves when `qIsOctaves`.
+    public let q: ControlID?
+    public let qIsOctaves: Bool
+    /// A `.choice` picking the band's shape; nil when it has one shape.
+    public let type: ControlID?
+    /// The shape for each of the type's options, or the one shape when there's no type.
+    public let shapes: [FilterShape]
+
+    public init(label: String, frequency: ControlID, gain: ControlID?, q: ControlID?, qIsOctaves: Bool = false,
+                type: ControlID? = nil, shapes: [FilterShape]) {
+        self.label = label
+        self.frequency = frequency
+        self.gain = gain
+        self.q = q
+        self.qIsOctaves = qIsOctaves
+        self.type = type
+        self.shapes = shapes
+    }
+}
+
+public struct EQLayout: Equatable, Sendable {
+    /// The EQ's on switch, if it has one.
+    public let on: ControlID?
+    public let bands: [EQBand]
+
+    public init(on: ControlID?, bands: [EQBand]) {
+        self.on = on
+        self.bands = bands
     }
 }
 

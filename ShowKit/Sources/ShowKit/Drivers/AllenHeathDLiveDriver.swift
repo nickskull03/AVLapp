@@ -60,6 +60,15 @@ final class AllenHeathDLiveDriver: ConsoleDriver {
         return params
     }()
 
+    /// Bell, low shelf, high shelf, low-pass, high-pass; width is in octaves.
+    static func eqLayout(strip id: String) -> EQLayout {
+        EQLayout(on: nil, bands: (1...4).map { band in
+            EQBand(label: "\(band)", frequency: ControlID("\(id).eq.\(band).freq"), gain: ControlID("\(id).eq.\(band).gain"),
+                   q: ControlID("\(id).eq.\(band).width"), qIsOctaves: true, type: ControlID("\(id).eq.\(band).type"),
+                   shapes: [.peak, .lowShelf, .highShelf, .highCut, .lowCut])
+        })
+    }
+
     static func control(_ param: InputParam, strip id: String) -> ControlDescriptor {
         let controlID = ControlID("\(id).\(param.suffix)")
         switch param.kind {
@@ -138,7 +147,8 @@ final class AllenHeathDLiveDriver: ConsoleDriver {
                     ControlSection(id: "hpf", title: "High-pass",
                                    controls: Self.inputParams.filter { $0.section == "hpf" }.map { Self.control($0, strip: id) }),
                     ControlSection(id: "eq", title: "EQ",
-                                   controls: Self.inputParams.filter { $0.section == "eq" }.map { Self.control($0, strip: id) })
+                                   controls: Self.inputParams.filter { $0.section == "eq" }.map { Self.control($0, strip: id) },
+                                   eq: Self.eqLayout(strip: id))
                 ] : []
                 return Strip(
                     id: id, name: "\(bank.short) \(i + 1)", style: bank.style,

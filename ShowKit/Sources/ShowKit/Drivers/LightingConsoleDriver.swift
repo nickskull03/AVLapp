@@ -9,12 +9,14 @@ import Foundation
 ///   second): the show (faders, sequences and their cues) and playback (page,
 ///   grand master, blackout, each sequence's level and running cue).
 ///
-/// Strips are the ten faders of the page the console is on. Commands name the
-/// fader with its page (`Fader 2.3`), so they act on the right one from any page.
+/// Strips are the ten faders of the page the console is on, and every sequence
+/// in the show (so a sequence can go on the custom layer whatever page it's
+/// on). Commands name the fader with its page (`Fader 2.3`), or the sequence
+/// (`Sequence 5`), so they act on the right one from any page.
 @MainActor
 final class LightingConsoleDriver: ConsoleDriver {
     let sink = DriverSink()
-    let groups: [StripGroup]
+    private(set) var groups: [StripGroup]
     let deviceControls: [ControlDescriptor] = [
         ControlDescriptor("page", "Page", .number(1...99)),
         ControlDescriptor("command", "Command", .command(hint: "Any console command, e.g. Group 1 At Full"))
@@ -29,27 +31,43 @@ final class LightingConsoleDriver: ConsoleDriver {
     private var heard = false
     /// What was last reported, so only changes go to the sink.
     private var reported: [String: String] = [:]
+    /// The show's sequence numbers, so the Sequences group is rebuilt only when they change.
+    private var sequenceList: [Int] = []
 
     init(config: DeviceConfig, transport makeTransport: TransportFactory) {
         transport = makeTransport(.webSocket(url: "ws://\(config.trimmedHost):\(config.port)/ws"))
-        groups = [
-            StripGroup(id: "faders", title: "Faders", strips: (1...Self.faders).map(Self.faderStrip)),
-            StripGroup(id: "master", title: "Master", strips: [
-                Strip(id: "master", name: "Grand master", style: .master,
-                      fader: ControlDescriptor("master.level", "Master", .fader(.percent)),
-                      buttons: [ControlDescriptor("master.blackout", "Blackout", .toggle(.blackout), needsConfirmation: true)])
-            ])
-        ]
+        groups = Self.buildGroups(sequences: [])
         transport.onState = { [weak self] in self?.transportState($0) }
         transport.onReceive = { [weak self] in self?.receive($0) }
     }
 
+    static func buildGroups(sequences: [Int]) -> [StripGroup] {
+        var groups = [StripGroup(id: "faders", title: "Faders", strips: (1...faders).map(faderStrip))]
+        if !sequences.isEmpty {
+            groups.append(StripGroup(id: "sequences", title: "Sequences", strips: sequences.map(sequenceStrip)))
+        }
+        groups.append(StripGroup(id: "master", title: "Master", strips: [
+            Strip(id: "master", name: "Grand master", style: .master,
+                  fader: ControlDescriptor("master.level", "Master", .fader(.percent)),
+                  buttons: [ControlDescriptor("master.blackout", "Blackout", .toggle(.blackout), needsConfirmation: true)])
+        ]))
+        return groups
+    }
+
     static func faderStrip(_ n: Int) -> Strip {
-        let id = "fader.\(n)"
-        return Strip(
-            id: id, name: "Fader \(n)", style: .playback,
+        playbackStrip(id: "fader.\(n)", name: "Fader \(n)", flash: true)
+    }
+
+    static func sequenceStrip(_ n: Int) -> Strip {
+        playbackStrip(id: "seq.\(n)", name: "Sequence \(n)", flash: false)
+    }
+
+    /// A fader or a sequence: level, Go and Off, Flash for faders, and cue tools.
+    static func playbackStrip(id: String, name: String, flash: Bool) -> Strip {
+        Strip(
+            id: id, name: name, style: .playback,
             fader: ControlDescriptor(ControlID("\(id).level"), "Fader", .fader(.percent)),
-            buttons: [ControlDescriptor(ControlID("\(id).flash"), "Flash", .momentary)],
+            buttons: flash ? [ControlDescriptor(ControlID("\(id).flash"), "Flash", .momentary)] : [],
             lowerButtons: [
                 ControlDescriptor(ControlID("\(id).go"), "Go", .trigger),
                 ControlDescriptor(ControlID("\(id).off"), "Off", .trigger)
@@ -84,8 +102,13 @@ final class LightingConsoleDriver: ConsoleDriver {
         default: break
         }
         let parts = id.rawValue.split(separator: ".")
-        guard parts.count == 3, parts[0] == "fader", let n = Int(parts[1]) else { return }
-        let fader = page == 1 ? "Fader \(n)" : "Fader \(page).\(n)"
+        guard parts.count == 3, let n = Int(parts[1]) else { return }
+        let fader: String
+        switch parts[0] {
+        case "fader": fader = page == 1 ? "Fader \(n)" : "Fader \(page).\(n)"
+        case "seq": fader = "Sequence \(n)"
+        default: return
+        }
         switch (parts[2], value) {
         case ("level", .level(let position)): command("\(fader) At \(Self.percent(position))")
         case ("go", .trigger): command("Go \(fader)")
@@ -177,6 +200,24 @@ final class LightingConsoleDriver: ConsoleDriver {
             report(name: id, sequence?["name"] as? String ?? "")
             let level = (status?["level"] as? Double ?? 0) / 100
             report(value: ControlID("\(id).level"), .level(clamp01(level)))
+            report(info: "\(id).cue", (run?["cue"] as? Double).map { Self.cueLabel($0, in: sequence) })
+            report(info: "\(id).next", (status?["next"] as? Double).map { Self.cueLabel($0, in: sequence) })
+            report(info: "\(id).active", run != nil || status?["flash"] as? Bool == true ? "1" : nil)
+        }
+        // Every sequence, for the Sequences group (and the custom layer).
+        let ids = sequences.keys.sorted()
+        if ids != sequenceList {
+            sequenceList = ids
+            groups = Self.buildGroups(sequences: ids)
+            sink.layoutChanged()
+        }
+        for sequenceID in ids {
+            let id = "seq.\(sequenceID)"
+            let sequence = sequences[sequenceID]
+            let status = statuses[sequenceID]
+            let run = status?["run"] as? [String: Any]
+            report(name: id, sequence?["name"] as? String ?? "")
+            report(value: ControlID("\(id).level"), .level(clamp01((status?["level"] as? Double ?? 0) / 100)))
             report(info: "\(id).cue", (run?["cue"] as? Double).map { Self.cueLabel($0, in: sequence) })
             report(info: "\(id).next", (status?["next"] as? Double).map { Self.cueLabel($0, in: sequence) })
             report(info: "\(id).active", run != nil || status?["flash"] as? Bool == true ? "1" : nil)

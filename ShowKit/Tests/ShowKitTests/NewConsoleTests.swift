@@ -3,6 +3,32 @@ import XCTest
 
 @MainActor
 final class WingDriverTests: XCTestCase {
+    func testSendsEnumsAsTheWingExpects() {
+        let net = FakeNetwork()
+        let driver = Drivers.make(config(.behringerWing), transport: net.factory)
+        let sink = SinkRecorder(driver)
+        driver.start()
+        driver.send("ch.2.eq.l.type", .number(1))
+        driver.send("ch.2.comp.ratio", .number(5))
+        driver.send("ch.2.comp.knee", .number(3))
+        driver.send("ch.2.eq.2.freq", .level(1))
+        XCTAssertEqual(net.last.sentOSC, [
+            OSCMessage("/ch/2/eq/STD/leq", [.string("SHV")]),
+            OSCMessage("/ch/2/dyn/COMP/ratio", [.float(2)]),
+            OSCMessage("/ch/2/dyn/COMP/knee", [.int(3)]),
+            OSCMessage("/ch/2/eq/STD/2f", [.float(20000)])
+        ])
+        net.last.reply(OSCMessage("/ch/2/eq/STD/heq", [.string("SHV")]))
+        net.last.reply(OSCMessage("/ch/2/dyn/COMP/ratio", [.string("4.0"), .float(0.5), .float(4)]))
+        XCTAssertEqual(sink.values["ch.2.eq.h.type"], .number(1))
+        XCTAssertEqual(sink.values["ch.2.comp.ratio"], .number(9))
+
+        let eq = driver.groups[0].strips[1].sections.first { $0.id == "eq" }?.eq
+        XCTAssertEqual(eq?.bands.map(\.label), ["L", "1", "2", "3", "4", "H"])
+        XCTAssertEqual(eq?.bands.first?.shapes, [.peak, .lowShelf])
+        driver.stop()
+    }
+
     func testSubscribesAndSendsInRealUnits() {
         let net = FakeNetwork()
         let driver = Drivers.make(config(.behringerWing), transport: net.factory)
@@ -52,8 +78,11 @@ final class WingDriverTests: XCTestCase {
         let driver = Drivers.make(config(.behringerWing), transport: net.factory)
         driver.start()
         driver.detailOpened("ch.7")
-        XCTAssertEqual(Set(net.last.sentOSC.map(\.address)),
-                       ["/ch/7/flt/lc", "/ch/7/flt/lcf", "/ch/7/eq/on", "/ch/7/gate/on", "/ch/7/dyn/on"])
+        let queried = Set(net.last.sentOSC.map(\.address))
+        XCTAssertTrue(queried.isSuperset(of: ["/ch/7/flt/lc", "/ch/7/flt/lcf", "/ch/7/eq/on", "/ch/7/gate/on", "/ch/7/dyn/on",
+                                             "/ch/7/eq/STD/1f", "/ch/7/eq/STD/heq", "/ch/7/gate/GATE/thr", "/ch/7/dyn/COMP/ratio",
+                                             "/ch/7/send/16/lvl", "/ch/7/in/set/trim"]))
+        XCTAssertTrue(queried.allSatisfy { $0.hasPrefix("/ch/7/") })
         XCTAssertEqual(driver.groups.map(\.strips.count), [40, 8, 16, 8, 16, 4, 8])
     }
 }

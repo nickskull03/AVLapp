@@ -36,12 +36,25 @@ public struct Cue: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-/// The whole setup: devices and cues. Saved as JSON whenever it changes.
+/// A strip on the custom layer: which device, which strip.
+public struct LayerEntry: Codable, Hashable, Sendable {
+    public var deviceID: UUID
+    public var stripID: String
+
+    public init(deviceID: UUID, stripID: String) {
+        self.deviceID = deviceID
+        self.stripID = stripID
+    }
+}
+
+/// The whole setup: devices, cues and the custom layer. Saved as JSON whenever it changes.
 @MainActor
 @Observable
 public final class Show {
     public private(set) var devices: [Device] = []
     public private(set) var cues: [Cue] = []
+    /// The custom layer: strips from any devices, lights and sound, in the user's order.
+    public private(set) var layer: [LayerEntry] = []
 
     private let fileURL: URL?
     private let makeTransport: TransportFactory
@@ -50,6 +63,21 @@ public final class Show {
         var version = 1
         var devices: [DeviceConfig]
         var cues: [Cue]
+        var layer: [LayerEntry]
+
+        init(devices: [DeviceConfig], cues: [Cue], layer: [LayerEntry]) {
+            self.devices = devices
+            self.cues = cues
+            self.layer = layer
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            version = try c.decodeIfPresent(Int.self, forKey: .version) ?? 1
+            devices = try c.decodeIfPresent([DeviceConfig].self, forKey: .devices) ?? []
+            cues = try c.decodeIfPresent([Cue].self, forKey: .cues) ?? []
+            layer = try c.decodeIfPresent([LayerEntry].self, forKey: .layer) ?? []
+        }
     }
 
     /// `fileURL` nil keeps everything in memory (tests, previews).
@@ -87,6 +115,7 @@ public final class Show {
     public func removeDevice(_ id: UUID) {
         device(id)?.disconnect()
         devices.removeAll { $0.id == id }
+        layer.removeAll { $0.deviceID == id }
         save()
     }
 
@@ -115,6 +144,37 @@ public final class Show {
     /// Back in the foreground: reconnect and re-read every console.
     public func resume() {
         devices.forEach { $0.resume() }
+    }
+
+    // MARK: Custom layer
+
+    public func isInLayer(_ entry: LayerEntry) -> Bool {
+        layer.contains(entry)
+    }
+
+    public func addToLayer(_ entry: LayerEntry) {
+        guard !layer.contains(entry) else { return }
+        layer.append(entry)
+        save()
+    }
+
+    public func removeFromLayer(_ entry: LayerEntry) {
+        layer.removeAll { $0 == entry }
+        save()
+    }
+
+    public func moveLayer(from source: IndexSet, to destination: Int) {
+        layer.moveItems(from: source, to: destination)
+        save()
+    }
+
+    /// The layer's strips that can be shown: their device exists and has that strip.
+    public var layerStrips: [(device: Device, strip: Strip)] {
+        layer.compactMap { entry in
+            guard let device = device(entry.deviceID),
+                  let strip = device.groups.lazy.flatMap(\.strips).first(where: { $0.id == entry.stripID }) else { return nil }
+            return (device: device, strip: strip)
+        }
     }
 
     // MARK: Cues
@@ -159,11 +219,12 @@ public final class Show {
               let stored = try? JSONDecoder().decode(Stored.self, from: data) else { return }
         devices = stored.devices.map { Device(config: $0, transport: makeTransport) }
         cues = stored.cues
+        layer = stored.layer
     }
 
     private func save() {
         guard let fileURL else { return }
-        let stored = Stored(devices: devices.map(\.config), cues: cues)
+        let stored = Stored(devices: devices.map(\.config), cues: cues, layer: layer)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(stored) else { return }

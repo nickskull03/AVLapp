@@ -66,7 +66,7 @@ final class BehringerProcessingTests: XCTestCase {
         driver.start()
         driver.detailOpened("ch/05")
         let queried = net.last.sentOSC
-        XCTAssertEqual(queried.count, 27) // high-pass 2, EQ 13, gate 6, compressor 6
+        XCTAssertEqual(queried.count, 47) // input 3, gate 7, compressor 13, EQ 17, pan and 6 sends 7
         XCTAssertTrue(queried.allSatisfy { $0.arguments.isEmpty && $0.address.hasPrefix("/ch/05/") })
 
         net.last.reply(OSCMessage("/ch/05/dyn/ratio", [.int(5)]))
@@ -163,6 +163,8 @@ final class YamahaProcessingTests: XCTestCase {
         let strip = driver.groups[0].strips[0]
         XCTAssertEqual(strip.gain?.id, "inch.1.gain.InCh.HAGain.0")
         XCTAssertEqual(strip.sections.map(\.title), ["EQ", "Gate"])
+        XCTAssertEqual(strip.sections[0].eq?.bands.count, 4) // drawn as a curve, from the console's own bands
+        XCTAssertEqual(strip.sections[0].eq?.on, "inch.1.eq.PEQ.On.0")
         XCTAssertEqual(strip.sections[0].controls.count, 9) // on, and frequency and gain for 4 bands
         XCTAssertEqual(strip.sections[1].controls.map(\.label), ["Threshold"]) // Type is a string: left out
 

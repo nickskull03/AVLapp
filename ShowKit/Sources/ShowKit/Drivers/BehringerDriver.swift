@@ -44,6 +44,25 @@ final class BehringerDriver: ConsoleDriver {
     static let compThresholdSpec = ParameterSpec(-60, 0, unit: "dB")
     static let makeupSpec = ParameterSpec(0, 24, unit: "dB")
     static let ratios = ["1.1:1", "1.3:1", "1.5:1", "2:1", "2.5:1", "3:1", "4:1", "5:1", "7:1", "10:1", "20:1", "100:1"]
+    static let trimSpec = ParameterSpec(-18, 18, unit: "dB")
+    static let panSpec = ParameterSpec(-100, 100, decimals: 0)
+    static let kneeSpec = ParameterSpec(0, 5, decimals: 0)
+    static let mixSpec = ParameterSpec(0, 100, unit: "%", decimals: 0)
+    static let eqTypes = ["Low cut", "Low shelf", "PEQ", "Vintage EQ", "High shelf", "High cut"]
+    static let eqShapes: [FilterShape] = [.lowCut, .lowShelf, .peak, .peak, .highShelf, .highCut]
+    static let gateModes = ["Expander 2:1", "Expander 3:1", "Expander 4:1", "Gate", "Ducker"]
+    static let compModes = ["Compressor", "Expander"]
+    static let detectors = ["Peak", "RMS"]
+    static let envelopes = ["Linear", "Log"]
+
+    /// What a strip's detail holds.
+    enum Processing {
+        case none
+        /// An input: trim, invert, high-pass, gate, compressor, EQ with `bands`, pan, and sends to `sends` buses.
+        case input(bands: Int, sends: Int, trim: Bool)
+        /// A bus or main: compressor and EQ with `bands`.
+        case output(bands: Int)
+    }
 
     private let config: DeviceConfig
     private let isX32: Bool
@@ -84,11 +103,60 @@ final class BehringerDriver: ConsoleDriver {
             return ControlDescriptor(id, label, .toggle(.enable))
         }
 
+        func choice(_ id: ControlID, _ address: String, _ label: String, _ options: [String]) -> ControlDescriptor {
+            targets[address] = .choice(id)
+            addresses[id] = address
+            return ControlDescriptor(id, label, .choice(options))
+        }
+
+        func send(_ id: ControlID, _ address: String, _ label: String) -> ControlDescriptor {
+            targets[address] = .fader(id)
+            addresses[id] = address
+            return ControlDescriptor(id, label, .fader(.decibels))
+        }
+
+        func eqSection(_ id: String, _ base: String, bands: Int) -> ControlSection {
+            var controls = [enable(ControlID("\(id).eq.on"), "\(base)/eq/on", "EQ on")]
+            var layout: [EQBand] = []
+            for band in 1...bands {
+                let typeID = ControlID("\(id).eq.\(band).type")
+                let freqID = ControlID("\(id).eq.\(band).freq")
+                let gainID = ControlID("\(id).eq.\(band).gain")
+                let qID = ControlID("\(id).eq.\(band).q")
+                controls += [
+                    choice(typeID, "\(base)/eq/\(band)/type", "Band \(band) type", Self.eqTypes),
+                    parameter(freqID, "\(base)/eq/\(band)/f", "Band \(band) frequency", Self.eqFreqSpec),
+                    parameter(gainID, "\(base)/eq/\(band)/g", "Band \(band) gain", Self.eqGainSpec),
+                    parameter(qID, "\(base)/eq/\(band)/q", "Band \(band) Q", Self.eqQSpec)
+                ]
+                layout.append(EQBand(label: "\(band)", frequency: freqID, gain: gainID, q: qID, type: typeID, shapes: Self.eqShapes))
+            }
+            return ControlSection(id: "eq", title: "EQ", controls: controls, eq: EQLayout(on: ControlID("\(id).eq.on"), bands: layout))
+        }
+
+        func compSection(_ id: String, _ base: String) -> ControlSection {
+            ControlSection(id: "comp", title: "Compressor", controls: [
+                enable(ControlID("\(id).comp.on"), "\(base)/dyn/on", "Compressor on"),
+                choice(ControlID("\(id).comp.mode"), "\(base)/dyn/mode", "Mode", Self.compModes),
+                parameter(ControlID("\(id).comp.thr"), "\(base)/dyn/thr", "Threshold", Self.compThresholdSpec),
+                choice(ControlID("\(id).comp.ratio"), "\(base)/dyn/ratio", "Ratio", Self.ratios),
+                parameter(ControlID("\(id).comp.knee"), "\(base)/dyn/knee", "Knee", Self.kneeSpec),
+                parameter(ControlID("\(id).comp.attack"), "\(base)/dyn/attack", "Attack", Self.attackSpec),
+                parameter(ControlID("\(id).comp.hold"), "\(base)/dyn/hold", "Hold", Self.holdSpec),
+                parameter(ControlID("\(id).comp.release"), "\(base)/dyn/release", "Release", Self.releaseSpec),
+                parameter(ControlID("\(id).comp.makeup"), "\(base)/dyn/mgain", "Make-up gain", Self.makeupSpec),
+                parameter(ControlID("\(id).comp.mix"), "\(base)/dyn/mix", "Mix", Self.mixSpec),
+                choice(ControlID("\(id).comp.det"), "\(base)/dyn/det", "Detector", Self.detectors),
+                choice(ControlID("\(id).comp.env"), "\(base)/dyn/env", "Envelope", Self.envelopes),
+                enable(ControlID("\(id).comp.auto"), "\(base)/dyn/auto", "Auto time")
+            ])
+        }
+
         // A strip with a fader at `<base>/mix/fader`, on at `<base>/mix/on`
         // (or `<base>/fader` and `<base>/on` for DCAs), name at `<base>/config/name`.
-        // Input channels also get preamp gain and processing.
+        // Inputs get preamp gain on the strip; inputs, buses and mains get processing.
         func strip(_ base: String, _ name: String, _ style: StripStyle, mixPath: Bool = true,
-                   confirmMute: Bool = false, headamp: String? = nil, processing: Bool = false,
+                   confirmMute: Bool = false, headamp: String? = nil, processing: Processing = .none,
                    inputMeter: Bool = false, outputMeter: Bool = false) -> Strip {
             let id = String(base.dropFirst())
             let levelID = ControlID("\(id).level")
@@ -105,41 +173,41 @@ final class BehringerDriver: ConsoleDriver {
             if let headamp {
                 gain = parameter(ControlID("\(id).gain"), headamp, "Gain", Self.gainSpec)
             }
+            let before = Set(addresses.values)
             var sections: [ControlSection] = []
-            if processing {
-                let before = Set(addresses.values)
-                sections.append(ControlSection(id: "hpf", title: "High-pass", controls: [
+            switch processing {
+            case .none:
+                break
+            case let .input(bands, sends, trim):
+                var preamp: [ControlDescriptor] = []
+                if trim { preamp.append(parameter(ControlID("\(id).trim"), "\(base)/preamp/trim", "Trim", Self.trimSpec)) }
+                preamp += [
+                    enable(ControlID("\(id).invert"), "\(base)/preamp/invert", "Phase invert"),
                     enable(ControlID("\(id).hpf.on"), "\(base)/preamp/hpon", "High-pass on"),
-                    parameter(ControlID("\(id).hpf.freq"), "\(base)/preamp/hpf", "Frequency", Self.hpfSpec)
-                ]))
-                var eq = [enable(ControlID("\(id).eq.on"), "\(base)/eq/on", "EQ on")]
-                for band in 1...4 {
-                    eq += [
-                        parameter(ControlID("\(id).eq.\(band).freq"), "\(base)/eq/\(band)/f", "Band \(band) frequency", Self.eqFreqSpec),
-                        parameter(ControlID("\(id).eq.\(band).gain"), "\(base)/eq/\(band)/g", "Band \(band) gain", Self.eqGainSpec),
-                        parameter(ControlID("\(id).eq.\(band).q"), "\(base)/eq/\(band)/q", "Band \(band) Q", Self.eqQSpec)
-                    ]
-                }
-                sections.append(ControlSection(id: "eq", title: "EQ", controls: eq))
+                    parameter(ControlID("\(id).hpf.freq"), "\(base)/preamp/hpf", "High-pass frequency", Self.hpfSpec)
+                ]
+                sections.append(ControlSection(id: "preamp", title: "Input", controls: preamp))
                 sections.append(ControlSection(id: "gate", title: "Gate", controls: [
                     enable(ControlID("\(id).gate.on"), "\(base)/gate/on", "Gate on"),
+                    choice(ControlID("\(id).gate.mode"), "\(base)/gate/mode", "Mode", Self.gateModes),
                     parameter(ControlID("\(id).gate.thr"), "\(base)/gate/thr", "Threshold", Self.gateThresholdSpec),
                     parameter(ControlID("\(id).gate.range"), "\(base)/gate/range", "Range", Self.gateRangeSpec),
                     parameter(ControlID("\(id).gate.attack"), "\(base)/gate/attack", "Attack", Self.attackSpec),
                     parameter(ControlID("\(id).gate.hold"), "\(base)/gate/hold", "Hold", Self.holdSpec),
                     parameter(ControlID("\(id).gate.release"), "\(base)/gate/release", "Release", Self.releaseSpec)
                 ]))
-                let ratioID = ControlID("\(id).comp.ratio")
-                targets["\(base)/dyn/ratio"] = .choice(ratioID)
-                addresses[ratioID] = "\(base)/dyn/ratio"
-                sections.append(ControlSection(id: "comp", title: "Compressor", controls: [
-                    enable(ControlID("\(id).comp.on"), "\(base)/dyn/on", "Compressor on"),
-                    parameter(ControlID("\(id).comp.thr"), "\(base)/dyn/thr", "Threshold", Self.compThresholdSpec),
-                    ControlDescriptor(ratioID, "Ratio", .choice(Self.ratios)),
-                    parameter(ControlID("\(id).comp.attack"), "\(base)/dyn/attack", "Attack", Self.attackSpec),
-                    parameter(ControlID("\(id).comp.release"), "\(base)/dyn/release", "Release", Self.releaseSpec),
-                    parameter(ControlID("\(id).comp.makeup"), "\(base)/dyn/mgain", "Make-up gain", Self.makeupSpec)
-                ]))
+                sections.append(compSection(id, base))
+                sections.append(eqSection(id, base, bands: bands))
+                var mix = [parameter(ControlID("\(id).pan"), "\(base)/mix/pan", "Pan", Self.panSpec)]
+                for bus in 1...max(1, sends) {
+                    mix.append(send(ControlID("\(id).send.\(bus)"), "\(base)/mix/\(two(bus))/level", "Send to bus \(bus)"))
+                }
+                sections.append(ControlSection(id: "sends", title: "Pan and sends", controls: mix))
+            case let .output(bands):
+                sections.append(compSection(id, base))
+                sections.append(eqSection(id, base, bands: bands))
+            }
+            if !sections.isEmpty {
                 detailQueries[id] = Array(Set(addresses.values).subtracting(before)).sorted()
             }
             return Strip(
@@ -166,32 +234,33 @@ final class BehringerDriver: ConsoleDriver {
             // Preamp gain assumes channel n is on local input n (the X32 default).
             let inputs = (1...32).map { n in
                 strip("/ch/\(two(n))", "Ch \(n)", .input, headamp: "/headamp/\(three(n - 1))/gain",
-                      processing: true, inputMeter: true)
+                      processing: .input(bands: 4, sends: 16, trim: true), inputMeter: true)
             }
             groups = [
                 StripGroup(id: "ch", title: "Inputs", strips: inputs),
                 StripGroup(id: "auxin", title: "Aux Ins", strips: (1...8).map { strip("/auxin/\(two($0))", "Aux \($0)", .input) }),
                 StripGroup(id: "fxrtn", title: "FX Returns", strips: (1...8).map { strip("/fxrtn/\(two($0))", "FX \($0)", .fx) }),
-                StripGroup(id: "bus", title: "Mix Buses", strips: (1...16).map { strip("/bus/\(two($0))", "Bus \($0)", .bus) }),
-                StripGroup(id: "mtx", title: "Matrices", strips: (1...6).map { strip("/mtx/\(two($0))", "Mtx \($0)", .bus) }),
+                StripGroup(id: "bus", title: "Mix Buses", strips: (1...16).map { strip("/bus/\(two($0))", "Bus \($0)", .bus, processing: .output(bands: 6)) }),
+                StripGroup(id: "mtx", title: "Matrices", strips: (1...6).map { strip("/mtx/\(two($0))", "Mtx \($0)", .bus, processing: .output(bands: 6)) }),
                 StripGroup(id: "dca", title: "DCAs", strips: (1...8).map { strip("/dca/\($0)", "DCA \($0)", .dca, mixPath: false) }),
                 StripGroup(id: "main", title: "Mains", strips: [
-                    strip("/main/st", "Main LR", .master, confirmMute: true),
-                    strip("/main/m", "Mono", .master, confirmMute: true)
+                    strip("/main/st", "Main LR", .master, confirmMute: true, processing: .output(bands: 6)),
+                    strip("/main/m", "Mono", .master, confirmMute: true, processing: .output(bands: 6))
                 ]),
                 muteGroups(6)
             ]
         } else {
             let inputs = (1...16).map { n in
-                strip("/ch/\(two(n))", "Ch \(n)", .input, headamp: "/headamp/\(two(n))/gain", processing: true, inputMeter: true)
+                strip("/ch/\(two(n))", "Ch \(n)", .input, headamp: "/headamp/\(two(n))/gain",
+                      processing: .input(bands: 4, sends: 6, trim: false), inputMeter: true)
             }
             groups = [
                 StripGroup(id: "ch", title: "Inputs", strips: inputs + [strip("/rtn/aux", "Aux In", .input, inputMeter: true)]),
                 StripGroup(id: "rtn", title: "FX Returns", strips: (1...4).map { strip("/rtn/\($0)", "FX \($0)", .fx, inputMeter: true) }),
-                StripGroup(id: "bus", title: "Buses", strips: (1...6).map { strip("/bus/\($0)", "Bus \($0)", .bus, outputMeter: true) }
+                StripGroup(id: "bus", title: "Buses", strips: (1...6).map { strip("/bus/\($0)", "Bus \($0)", .bus, processing: .output(bands: 6), outputMeter: true) }
                     + (1...4).map { strip("/fxsend/\($0)", "FX Send \($0)", .fx, outputMeter: true) }),
                 StripGroup(id: "dca", title: "DCAs", strips: (1...4).map { strip("/dca/\($0)", "DCA \($0)", .dca, mixPath: false) }),
-                StripGroup(id: "main", title: "Main", strips: [strip("/lr", "Main LR", .master, confirmMute: true, outputMeter: true)]),
+                StripGroup(id: "main", title: "Main", strips: [strip("/lr", "Main LR", .master, confirmMute: true, processing: .output(bands: 6), outputMeter: true)]),
                 muteGroups(4)
             ]
         }

@@ -1,21 +1,62 @@
 import ShowKit
 import SwiftUI
 
-/// The working surface. How many devices it shows depends on the space it
-/// has, not on the kind of device, so it suits iPhone, iPad and the iPhone
-/// Duo folded or open:
-///
-/// - **Side by side**, lights on the left and sound on the right, when it's wide
-///   enough. On the Duo, opened, the split falls on the fold.
-/// - **Stacked**, lights above and sound below, when it's tall rather than wide
-///   (iPad in portrait).
-/// - **One at a time** on phone-sized screens (iPhone, the Duo folded).
-///
-/// Each pane keeps its device, and each device keeps its strip group, when the
-/// layout changes, so folding or rotating mid-show loses nothing.
+/// How the Desk splits the screen.
+enum DeskLayout: String, CaseIterable, Identifiable {
+    /// Two panes when there's room for them, else one.
+    case auto
+    case one
+    case sideBySide
+    case stacked
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .auto: return "Automatic"
+        case .one: return "One pane"
+        case .sideBySide: return "Two, side by side"
+        case .stacked: return "Two, one above the other"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .auto: return "rectangle.3.group"
+        case .one: return "rectangle"
+        case .sideBySide: return "rectangle.split.2x1"
+        case .stacked: return "rectangle.split.1x2"
+        }
+    }
+}
+
+/// What a pane shows: a device, or the custom layer.
+enum PaneSource: Equatable {
+    case device(UUID)
+    case layer
+
+    static let layerTag = "layer"
+
+    init?(tag: String) {
+        if tag == Self.layerTag { self = .layer } else if let id = UUID(uuidString: tag) { self = .device(id) } else { return nil }
+    }
+
+    var tag: String {
+        switch self {
+        case .device(let id): return id.uuidString
+        case .layer: return Self.layerTag
+        }
+    }
+}
+
+/// The working surface: one or two panes, each showing a device or the custom
+/// layer. You choose the layout and what each pane shows; "Automatic" picks
+/// one or two panes from the space there is (iPhone, iPad, the iPhone Duo
+/// folded or open). Panes keep what they show when the layout changes.
 struct DeskView: View {
     @Environment(Show.self) private var show
     @AppStorage("appMode") private var mode = AppMode.both
+    @AppStorage("desk.layout") private var layout = DeskLayout.auto
     @AppStorage("desk.top") private var firstID = ""
     @AppStorage("desk.bottom") private var secondID = ""
     /// The strip group chosen on each device, kept here so it survives layout changes.
@@ -42,24 +83,50 @@ struct DeskView: View {
                 description: Text(mode == .both ? "Add your mixer and lighting console in Devices." : "Add one in Devices, or show both halves there.")
             )
         } else {
-            GeometryReader { geo in
-                switch Self.arrangement(for: geo.size, deviceCount: visible.count) {
-                case .single:
-                    pane($firstID, .lighting)
-                case .sideBySide:
-                    HStack(spacing: 0) {
-                        pane($firstID, .lighting)
-                        Divider()
-                        pane($secondID, .audio)
+            VStack(spacing: 0) {
+                HStack {
+                    Spacer()
+                    Menu {
+                        Picker("Layout", selection: $layout) {
+                            ForEach(DeskLayout.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
+                        }
+                    } label: {
+                        Label(layout.title, systemImage: layout.symbol)
+                            .labelStyle(.iconOnly)
+                            .font(.title3)
                     }
-                case .stacked:
-                    VStack(spacing: 0) {
+                    .accessibilityLabel("Layout: \(layout.title)")
+                }
+                .padding(.horizontal)
+                .padding(.top, 4)
+                GeometryReader { geo in
+                    switch arrangement(geo.size, sources: visible.count + (show.layer.isEmpty ? 0 : 1)) {
+                    case .single:
                         pane($firstID, .lighting)
-                        Divider()
-                        pane($secondID, .audio)
+                    case .sideBySide:
+                        HStack(spacing: 0) {
+                            pane($firstID, .lighting)
+                            Divider()
+                            pane($secondID, .audio)
+                        }
+                    case .stacked:
+                        VStack(spacing: 0) {
+                            pane($firstID, .lighting)
+                            Divider()
+                            pane($secondID, .audio)
+                        }
                     }
                 }
             }
+        }
+    }
+
+    private func arrangement(_ size: CGSize, sources: Int) -> Arrangement {
+        switch layout {
+        case .auto: return Self.arrangement(for: size, deviceCount: sources)
+        case .one: return .single
+        case .sideBySide: return .sideBySide
+        case .stacked: return .stacked
         }
     }
 
@@ -69,7 +136,7 @@ struct DeskView: View {
     }
 }
 
-/// One device's strips, with a menu to switch device.
+/// One pane: a device's strips or the custom layer, with a menu to choose which.
 struct DevicePane: View {
     @Environment(Show.self) private var show
     @Binding var selection: String
@@ -79,37 +146,186 @@ struct DevicePane: View {
 
     private var visible: [Device] { show.devices.filter { mode.allows($0.kind.domain) } }
 
-    private var device: Device? {
-        visible.first { $0.id.uuidString == selection }
+    private var source: PaneSource? {
+        if PaneSource(tag: selection) == .layer { return .layer }
+        let device = visible.first { $0.id.uuidString == selection }
             ?? visible.first { $0.kind.domain == preferred }
             ?? visible.first
+        return device.map { .device($0.id) }
     }
 
     var body: some View {
-        if let device {
-            VStack(alignment: .leading, spacing: 8) {
-                Menu {
-                    ForEach(visible) { other in
-                        Button {
-                            selection = other.id.uuidString
-                        } label: {
-                            Label(other.name, systemImage: other.kind.domain == .audio ? "speaker.wave.2" : "lightbulb")
-                        }
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            Menu {
+                Button {
+                    selection = PaneSource.layerTag
                 } label: {
-                    HStack(spacing: 4) {
-                        Text(device.name).font(.headline)
-                        Image(systemName: "chevron.down").font(.caption)
+                    Label("Custom layer", systemImage: "square.stack.3d.up")
+                }
+                Divider()
+                ForEach(visible) { other in
+                    Button {
+                        selection = other.id.uuidString
+                    } label: {
+                        Label(other.name, systemImage: other.kind.domain == .audio ? "speaker.wave.2" : "lightbulb")
                     }
                 }
-                DeviceSurface(device: device, groupID: Binding(
-                    get: { groups[device.id] ?? "" },
-                    set: { groups[device.id] = $0 }
-                ))
-                .id(device.id)
+            } label: {
+                HStack(spacing: 4) {
+                    Text(title).font(.headline)
+                    Image(systemName: "chevron.down").font(.caption)
+                }
             }
-            .padding([.horizontal, .top])
-            .padding(.bottom, 8)
+            switch source {
+            case .layer?:
+                LayerSurface(mode: mode)
+            case .device(let id)?:
+                if let device = show.device(id) {
+                    DeviceSurface(device: device, groupID: Binding(
+                        get: { groups[device.id] ?? "" },
+                        set: { groups[device.id] = $0 }
+                    ))
+                    .id(device.id)
+                }
+            case nil:
+                EmptyView()
+            }
+        }
+        .padding([.horizontal, .top])
+        .padding(.bottom, 8)
+    }
+
+    private var title: String {
+        switch source {
+        case .layer?: return "Custom layer"
+        case .device(let id)?: return show.device(id)?.name ?? "Device"
+        case nil: return "Choose"
+        }
+    }
+}
+
+/// The custom layer: strips from any devices, each labelled Lights or Sound.
+struct LayerSurface: View {
+    @Environment(Show.self) private var show
+    var mode: AppMode
+    @State private var filter = AppMode.both
+    @State private var detail: LayerDetail?
+    @State private var editing = false
+
+    struct LayerDetail: Identifiable {
+        let device: Device
+        let strip: Strip
+        var id: String { "\(device.id.uuidString)/\(strip.id)" }
+    }
+
+    var body: some View {
+        let strips = show.layerStrips.filter { mode.allows($0.device.kind.domain) && filter.allows($0.device.kind.domain) }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                if mode == .both {
+                    Picker("Show", selection: $filter) {
+                        Text("All").tag(AppMode.both)
+                        Text("Lights").tag(AppMode.lighting)
+                        Text("Sound").tag(AppMode.audio)
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+                Spacer()
+                Button("Edit", systemImage: "pencil") { editing = true }
+                    .disabled(show.layer.isEmpty)
+            }
+            if strips.isEmpty {
+                ContentUnavailableView(
+                    "Nothing on the layer yet",
+                    systemImage: "square.stack.3d.up",
+                    description: Text("Tap a strip's name on any device, then turn on \"On the custom layer\". Mixer channels and lighting sequences can sit side by side here.")
+                )
+            } else {
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 8) {
+                        ForEach(strips.map { LayerDetail(device: $0.device, strip: $0.strip) }) { entry in
+                            VStack(spacing: 4) {
+                                DomainTag(device: entry.device)
+                                StripView(device: entry.device, strip: entry.strip) { detail = entry }
+                            }
+                        }
+                    }
+                    .padding(.bottom, 4)
+                }
+                .scrollIndicators(.visible)
+            }
+        }
+        .sheet(item: $detail) { item in
+            NavigationStack {
+                StripDetailView(device: item.device, strip: item.strip)
+            }
+        }
+        .sheet(isPresented: $editing) {
+            NavigationStack {
+                LayerEditor()
+            }
+        }
+    }
+}
+
+/// "LIGHTS · MA3" or "SOUND · X32" above a strip on the custom layer.
+struct DomainTag: View {
+    let device: Device
+
+    var body: some View {
+        let lights = device.kind.domain == .lighting
+        HStack(spacing: 3) {
+            Image(systemName: lights ? "lightbulb.fill" : "speaker.wave.2.fill")
+            Text(lights ? "LIGHTS" : "SOUND")
+        }
+        .font(.caption2.weight(.bold))
+        .foregroundStyle(.white)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(lights ? Color.orange : Color.teal, in: Capsule())
+        .overlay(alignment: .bottom) {
+            Text(device.name)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .fixedSize()
+                .offset(y: 14)
+        }
+        .padding(.bottom, 12)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Reorder or remove what's on the custom layer.
+struct LayerEditor: View {
+    @Environment(Show.self) private var show
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            ForEach(show.layer, id: \.self) { entry in
+                let device = show.device(entry.deviceID)
+                let strip = device?.groups.lazy.flatMap(\.strips).first { $0.id == entry.stripID }
+                HStack {
+                    Image(systemName: device?.kind.domain == .lighting ? "lightbulb.fill" : "speaker.wave.2.fill")
+                        .foregroundStyle(device?.kind.domain == .lighting ? Color.orange : Color.teal)
+                    VStack(alignment: .leading) {
+                        Text(strip.flatMap { s in device.map { $0.displayName(of: s) } } ?? entry.stripID)
+                        Text(device?.name ?? "Removed device").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .onMove { show.moveLayer(from: $0, to: $1) }
+            .onDelete { offsets in
+                for i in offsets.sorted(by: >) { show.removeFromLayer(show.layer[i]) }
+            }
+        }
+        .environment(\.editMode, .constant(.active))
+        .navigationTitle("Custom layer")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
         }
     }
 }

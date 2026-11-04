@@ -11,12 +11,16 @@ itself when there's no lighting console. It's built on the design in
 
 | Mixer | Protocol | Faders and mutes | Processing (tap a strip's name) | Gain on strip | Meters |
 |---|---|---|---|---|---|
-| Behringer X32 / Midas M32 | OSC, UDP 10023 | Inputs, aux ins, FX returns, buses, matrices, DCAs, mains, mute groups | High-pass, 4-band EQ, gate, compressor (inputs) | Preamp (local input n) | Inputs |
-| Behringer X Air / Midas MR | OSC, UDP 10024 | Inputs, aux in, FX returns and sends, buses, DCAs, main, mute groups | High-pass, 4-band EQ, gate, compressor (inputs) | Preamp | Inputs, buses, main |
-| Behringer Wing (Full, Compact, Rack) | OSC, UDP 2223 | Channels, aux ins, buses, matrices, DCAs, mains, mute groups | Low-cut; EQ, gate and compressor in/out (inputs) | Input gain | – |
+| Behringer X32 / Midas M32 | OSC, UDP 10023 | Inputs, aux ins, FX returns, buses, matrices, DCAs, mains, mute groups | Inputs: trim, phase, high-pass, gate (mode, threshold, range, times), compressor (mode, ratio, knee, times, make-up, mix, detector, envelope, auto), 4-band parametric EQ with band types, pan and all 16 bus sends. Buses, matrices, mains: compressor and 6-band EQ | Preamp (local input n) | Inputs |
+| Behringer X Air / Midas MR | OSC, UDP 10024 | Inputs, aux in, FX returns and sends, buses, DCAs, main, mute groups | The same as the X32 (no trim), with 6 bus sends; buses and main: compressor and 6-band EQ | Preamp | Inputs, buses, main |
+| Behringer Wing (Full, Compact, Rack) | OSC, UDP 2223 | Channels, aux ins, buses, matrices, DCAs, mains, mute groups | Channels: trim, phase, phantom, low/high-cut with slope, gate (GATE model), compressor (COMP model), STD EQ (shelf/peak low and high bands plus 4 parametric), pan and 16 sends. Buses, matrices, mains: compressor and 8-band EQ | Input gain | – |
 | Allen & Heath SQ | MIDI over TCP 51325 | Inputs, FX returns and groups (to LR), mixes, FX sends, matrices, DCAs, LR, mute groups | Not in SQ's MIDI protocol | – | – |
-| Allen & Heath dLive / Avantis | MIDI over TCP: MixRack 51325, Surface 51328 | Every strip type | High-pass, 4-band EQ (inputs). No gate or compressor over MIDI | Preamp (MixRack socket n) | – |
-| Yamaha TF / DM3 / CL / QL / DM7 | RCP text over TCP 49280 | Inputs, stereo inputs, FX returns, mixes, matrices, DCAs, stereo | Whatever the console reports: EQ, gate, compressor, high-pass | Head amp, where reported | Inputs (pre-fader) and outputs |
+| Allen & Heath dLive / Avantis | MIDI over TCP: MixRack 51325, Surface 51328 | Every strip type | High-pass, 4-band parametric EQ with types and widths (inputs). No gate or compressor over MIDI | Preamp (MixRack socket n) | – |
+| Yamaha TF / DM3 / CL / QL / DM7 | RCP text over TCP 49280 | Inputs, stereo inputs, FX returns, mixes, matrices, DCAs, stereo | Whatever the console reports: EQ bands, gate, compressor, high-pass | Head amp, where reported | Inputs (pre-fader) and outputs |
+
+**Parametric EQ:** every EQ is drawn as a curve. Drag a band's point left and
+right for frequency, up and down for gain, and pinch for Q or width. Each
+band's exact values and type are listed below the curve.
 
 Every mixer also does scene recall, reads channel names (not SQ), and follows
 changes made at the desk.
@@ -31,7 +35,7 @@ and builds the controls from what it says.
 |---|---|---|---|---|
 | grandMA3 | OSC, UDP (8000) | Executor columns on a page: the 1xx key under the fader, the 2xx fader and key, and the 3xx/4xx knobs and keys (you choose which rows) | Keys do what they do on the desk, or a fixed Go+, Go−, Toggle, On, Off, Top or Select. Cue tools: Go+, Go−, go to cue, set cue fade, update cue. Page, command line | With the [Show Deck plugin](MA3/README.md): names, running keys, current and next cue, faders, the desk's page |
 | ChamSys MagicQ | OSC, UDP (8000 in, 9000 out) | Playbacks 1–10 | Go, Stop, Flash | Playback levels, when TX is set |
-| Lighting (the desktop console in nickskull03/lighting) | Its WebSocket API, ws://host:8080/ws | The ten faders of the page it's on, plus the grand master | Go, Off, Flash, Blackout. Cue tools: Back, Pause, go to cue, set cue fade, store cue. Page, command line | Sequence names, levels, running and next cue, page, grand master, blackout, and its error messages |
+| Lighting (the desktop console in nickskull03/lighting) | Its WebSocket API, ws://host:8080/ws | The ten faders of the page it's on, every sequence in the show, and the grand master | Go, Off, Flash, Blackout. Cue tools: Back, Pause, go to cue, set cue fade, store cue. Page, command line | Sequence names, levels, running and next cue, page, grand master, blackout, and its error messages |
 | ETC Eos family | OSC over TCP 3032 | An OSC fader bank | Fire, Stop, Go, Stop/Back, fader pages. Go to cue, set cue time, update cue, command line | Levels, names, active and pending cue |
 | Lights direct | Art-Net to a node's IP | One fader per DMX channel, plus a master | Blackout | (the app is the source) |
 
@@ -51,15 +55,20 @@ In **Devices**, the menu at the top right switches between **Lights & Sound**,
 the device list, adding devices and the cue editor, and its devices
 disconnect.
 
-**Desk tab:** the working surface. How many devices it shows depends on the
-space it has, not on the kind of device:
-- **Side by side** (lights left, sound right) when it's wide: the iPhone Duo
-  opened, with the split on the fold, and iPad in landscape.
-- **Stacked** (lights above, sound below) when it's tall: iPad in portrait.
-- **One at a time** on phone-sized screens: iPhone, and the iPhone Duo folded.
+**Desk tab:** one or two panes. The layout button at the top right chooses:
+- **Automatic:** two panes when there's room, one on phone-sized screens;
+- **One pane**;
+- **Two side by side**;
+- **Two, one above the other**.
 
-Pick any device for either pane. Each pane keeps its device, and each device
-keeps its strip group, when you fold, unfold or rotate.
+Each pane's menu chooses what it shows: any device, or the **custom layer**.
+Panes keep their choice when you fold, unfold or rotate.
+
+**Custom layer:** a page of your own, with strips from any devices: mixer
+channels next to lighting sequences and executors. Each strip is labelled
+LIGHTS or SOUND, with its device's name. To add a strip, tap its name on any
+device and turn on **On the custom layer**. **Edit** reorders or removes
+strips. The layer can show all of them, or just lights or sound.
 
 **Cues tab:** big buttons that each do several things across devices, like
 "Speech" (podium light up, lectern mic on) or "Walk-in". You can ask to

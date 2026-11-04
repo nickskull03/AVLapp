@@ -50,6 +50,8 @@ struct StripDetailView: View {
 
     private var custom: StripCustomization { device.customization(strip.id) }
 
+    private var entry: LayerEntry { LayerEntry(deviceID: device.id, stripID: strip.id) }
+
     private var momentaryControls: [ControlDescriptor] {
         (strip.buttons + strip.lowerButtons).filter { if case .momentary = $0.kind { return true } else { return false } }
     }
@@ -71,6 +73,15 @@ struct StripDetailView: View {
                 }
             }
 
+            Section {
+                Toggle("On the custom layer", isOn: Binding(
+                    get: { show.isInLayer(entry) },
+                    set: { $0 ? show.addToLayer(entry) : show.removeFromLayer(entry) }
+                ))
+            } footer: {
+                Text("The custom layer is a page of your own on the Desk: strips from any device, lights and sound side by side.")
+            }
+
             if !device.traits.buttonActions.isEmpty && !momentaryControls.isEmpty {
                 Section {
                     ForEach(momentaryControls) { control in
@@ -90,6 +101,10 @@ struct StripDetailView: View {
 
             ForEach(strip.sections) { section in
                 Section {
+                    if let eq = section.eq, !eq.bands.isEmpty {
+                        EQGraphView(device: device, layout: eq, controls: section.controls)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                    }
                     ForEach(section.controls) { control in
                         ControlRow(device: device, control: control)
                     }
@@ -147,6 +162,32 @@ struct StripDetailView: View {
     }
 }
 
+/// A fader-style level in a list, like a send: dB along the console fader law, or %.
+struct FaderRow: View {
+    let device: Device
+    let control: ControlDescriptor
+    let unit: LevelUnit
+    let isEnabled: Bool
+
+    var body: some View {
+        let position = device.control(control.id).value?.level
+        VStack(spacing: 4) {
+            HStack {
+                Text(control.label)
+                Spacer(minLength: 4)
+                Text(position.map { unit == .decibels ? "\(AudioTaper.text(position: $0)) dB" : "\(Int(($0 * 100).rounded()))%" } ?? "–")
+                    .monospacedDigit()
+            }
+            Slider(
+                value: Binding(get: { position ?? 0 }, set: { device.setLevel(control.id, $0) }),
+                in: 0...1,
+                onEditingChanged: { device.touch(control.id, $0) }
+            )
+            .disabled(!isEnabled)
+        }
+    }
+}
+
 /// One control in a list: a slider, switch, picker, command field or button.
 struct ControlRow: View {
     let device: Device
@@ -162,8 +203,8 @@ struct ControlRow: View {
             switch control.kind {
             case .parameter(let spec):
                 ParameterSlider(device: device, control: control, spec: spec, isEnabled: live)
-            case .fader:
-                ParameterSlider(device: device, control: control, spec: ParameterSpec(0, 100, unit: "%", decimals: 0), isEnabled: live)
+            case .fader(let unit):
+                FaderRow(device: device, control: control, unit: unit, isEnabled: live)
             case .toggle:
                 Toggle(control.label, isOn: Binding(
                     get: { device.control(control.id).value?.isOn ?? false },
