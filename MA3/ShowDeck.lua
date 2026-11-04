@@ -15,9 +15,10 @@
 --   /Page<p>/NextCue<exec> ,s  next cue
 --   /CurrentPage           ,i  the page the desk is on
 --
--- Based on the approach of MA3_OSC_FEEDBACK by ArtGateOne and Andreas from the
--- MA forum. Every lookup is guarded, so anything a software version lacks just
--- isn't sent.
+-- Written for grandMA3 2.5 (checked against the 2.5.1 Lua API and object
+-- properties). Based on the approach of MA3_OSC_FEEDBACK by ArtGateOne and
+-- Andreas from the MA forum. Every lookup is guarded, so anything a software
+-- version lacks just isn't sent.
 
 local OSC_LINE = 1          -- which OSC line to send with
 local COLUMNS = 15          -- executors x01–x15
@@ -25,7 +26,7 @@ local ROWS = {1, 2, 3, 4}   -- 1xx (under the fader), 2xx (fader), 3xx and 4xx (
 local INTERVAL = 0.25       -- seconds between checks
 local RESEND = 20           -- also resend everything every this many checks
 
-local Cmd, GetExecutor, ipairs, pcall, tostring, mfloor = Cmd, GetExecutor, ipairs, pcall, tostring, math.floor
+local Cmd, GetExecutor, ipairs, pcall, tostring, tonumber, mfloor = Cmd, GetExecutor, ipairs, pcall, tostring, tonumber, math.floor
 
 local running = false
 local sent = {}
@@ -51,44 +52,54 @@ local function safe(f, ...)
   return nil
 end
 
-local function currentPage()
-  local page = safe(CurrentExecPage)
-  if not page then return 1 end
-  return safe(function() return page.no end) or safe(function() return page.index end) or 1
+-- A property by name (2.5: handle:Get("Name")), falling back to field access.
+local function prop(handle, name)
+  if not handle then return nil end
+  local value = safe(function() return handle:Get(name) end)
+  if value == nil then value = safe(function() return handle[name] end) end
+  return value
 end
 
--- "3 Verse": the cue's number from its address, then its name.
-local function cueLabel(cue)
-  if not cue then return "-" end
-  local addr = safe(function() return cue:ToAddr() end) or ""
-  local number = addr:match("Cue%s+([%d%.]+)") or ""
-  local name = safe(function() return cue.name end) or ""
+local function currentPage()
+  local page = safe(CurrentExecPage)
+  return tonumber(prop(page, "No")) or 1
+end
+
+-- "3 Verse": a cue's number, then its name if it isn't just "Cue 3".
+local function label(number, name)
+  number = tostring(number or "")
+  name = tostring(name or "")
+  if number == "" and name == "" then return "-" end
   if name == "" or name == ("Cue " .. number) then return clean(number) end
   return clean(number .. " " .. name)
 end
 
+-- Current and next cue of a sequence. 2.5 sequences carry CueNo, CueName and
+-- CurrentCue; the next cue is the one after CurrentCue among its children.
 local function cues(sequence)
-  if not sequence then return nil, nil end
-  local current = safe(function() return sequence:CurrentChild() end)
-  if not current then return nil, nil end
-  local nextCue = nil
+  if not sequence then return "-", "-" end
+  local cueNo = prop(sequence, "CueNo")
+  if cueNo == nil or cueNo == "" then return "-", "-" end
+  local current = label(cueNo, prop(sequence, "CueName"))
+  local nextLabel = "-"
+  local currentCue = prop(sequence, "CurrentCue")
   local children = safe(function() return sequence:Children() end) or {}
   for i, child in ipairs(children) do
-    if child == current then
-      nextCue = children[i + 1]
+    if child == currentCue and children[i + 1] then
+      local nextCue = children[i + 1]
+      nextLabel = label(prop(nextCue, "No"), prop(nextCue, "Name"))
       break
     end
   end
-  return current, nextCue
+  return current, nextLabel
 end
 
 local function poll(pageNumber, exec)
   local executor = safe(GetExecutor, exec)
-  local object = executor and safe(function() return executor.Object end)
+  local object = prop(executor, "Object")
   local base = string.format("/Page%d/", pageNumber)
 
-  local name = object and safe(function() return object.name end) or nil
-  send(base .. "Name" .. exec, "s", clean(name))
+  send(base .. "Name" .. exec, "s", clean(prop(object, "Name")))
 
   local fader = executor and safe(function() return executor:GetFader({}) end)
   if fader then send(base .. "Fader" .. exec, "i", mfloor(fader + 0.5)) end
@@ -96,9 +107,9 @@ local function poll(pageNumber, exec)
   local active = object and safe(function() return object:HasActivePlayback() end)
   send(base .. "Active" .. exec, "i", active and 1 or 0)
 
-  local current, nextCue = cues(object)
-  send(base .. "Cue" .. exec, "s", cueLabel(current))
-  send(base .. "NextCue" .. exec, "s", cueLabel(nextCue))
+  local current, nextLabel = cues(object)
+  send(base .. "Cue" .. exec, "s", current)
+  send(base .. "NextCue" .. exec, "s", nextLabel)
 end
 
 local function mainloop()
@@ -120,7 +131,7 @@ local function mainloop()
   end
 end
 
-local function toggle()
+local function toggle(displayHandle)
   if running then
     running = false
     Printf("Show Deck feedback stopped")
@@ -132,4 +143,8 @@ local function toggle()
   end
 end
 
-return toggle
+local function cleanup()
+  running = false
+end
+
+return toggle, cleanup
