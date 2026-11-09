@@ -335,6 +335,8 @@ struct DeviceSurface: View {
     let device: Device
     @Binding var groupID: String
     @State private var detail: Strip?
+    /// Showing the console's keys instead of its strips.
+    @State private var showingKeys = false
 
     private var group: StripGroup? {
         device.groups.first { $0.id == groupID } ?? device.groups.first
@@ -343,7 +345,16 @@ struct DeviceSurface: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                if device.groups.count > 1 {
+                if device.keyPanel != nil {
+                    Picker("Show", selection: $showingKeys) {
+                        Label("Faders", systemImage: "slider.vertical.3").tag(false)
+                        Label("Keys", systemImage: "keyboard").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelStyle(.titleOnly)
+                    .fixedSize()
+                }
+                if device.groups.count > 1 && !(showingKeys && device.keyPanel != nil) {
                     Picker("Strips", selection: Binding(get: { group?.id ?? "" }, set: { groupID = $0 })) {
                         ForEach(device.groups) { Text($0.title).tag($0.id) }
                     }
@@ -363,7 +374,9 @@ struct DeviceSurface: View {
             if !device.deviceControls.isEmpty {
                 DeviceControlsBar(device: device)
             }
-            if let group {
+            if showingKeys, let panel = device.keyPanel {
+                KeyPanelView(device: device, panel: panel)
+            } else if let group {
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: 8) {
                         ForEach(group.strips) { strip in

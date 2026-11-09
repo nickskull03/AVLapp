@@ -23,6 +23,48 @@ final class LightingConsoleDriver: ConsoleDriver {
     ]
     let traits = DriverTraits(reportsChanges: true, readsNames: true)
 
+    /// The panel's immediate keys and the command each sends.
+    static let panelCommands = [
+        "go": "Go", "back": "Back", "pause": "Pause", "clear": "Clear", "clearall": "ClearAll",
+        "oops": "Oops", "highlight": "Highlight"
+    ]
+
+    /// The console's keywords. The keys build a command line in the app and
+    /// Enter sends it, as typed on the console; Go, Back and Pause work the
+    /// selected sequence straight away.
+    static let panel: KeyPanel = {
+        func now(_ id: String, _ label: String, _ role: PanelKey.Role = .normal, span: Int = 1) -> PanelKey {
+            PanelKey("panel.\(id)", label, .trigger(ControlID("panel.\(id)")), role: role, span: span)
+        }
+        let w = { (text: String) in PanelKey.word(text) }
+        return KeyPanel(commandLine: .local(send: "command"), sections: [
+            KeySection(id: "objects", title: "Objects", rows: [
+                [w("Fixture"), w("Group"), w("Preset")],
+                [w("Sequence"), w("Cue"), w("Fader")],
+                [w("Page"), w("Effect"), w("Channel")]
+            ]),
+            KeySection(id: "functions", title: "Functions", rows: [
+                [w("Store"), w("Assign"), w("Delete")],
+                [w("Label"), w("Goto"), w("Flash")],
+                [w("Fade"), w("Delay"), w("Off")]
+            ]),
+            KeySection(id: "numbers", title: "Numbers", rows: [
+                [w("At"), w("Thru"), w("Full")],
+                [PanelKey.word("+", role: .normal), PanelKey.word("-", role: .normal), w("Zero")]
+            ] + PanelKey.numberPad() + [[
+                PanelKey("clear", "Clear", .clear(ControlID("panel.clear")), role: .clear),
+                PanelKey("backspace", "⌫", .backspace, role: .clear),
+                PanelKey("enter", "Enter", .enter, role: .enter)
+            ]]),
+            KeySection(id: "playback", title: "Playback", rows: [
+                [now("go", "Go", .go), now("back", "Back"), now("pause", "Pause", .stop)],
+                [now("highlight", "Highlight"), now("oops", "Oops", .clear), now("clearall", "Clear All", .clear)]
+            ])
+        ])
+    }()
+
+    var keyPanel: KeyPanel? { Self.panel }
+
     static let faders = 10
 
     private let transport: Transport
@@ -100,6 +142,10 @@ final class LightingConsoleDriver: ConsoleDriver {
         case ("master.level", .level(let position)): command("Master At \(Self.percent(position))"); return
         case ("master.blackout", .on(let on)): command(on ? "Blackout" : "Blackout Off"); return
         default: break
+        }
+        if id.rawValue.hasPrefix("panel."), case .trigger = value {
+            if let text = Self.panelCommands[String(id.rawValue.dropFirst(6))] { command(text) }
+            return
         }
         let parts = id.rawValue.split(separator: ".")
         guard parts.count == 3, let n = Int(parts[1]) else { return }

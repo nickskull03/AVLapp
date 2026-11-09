@@ -54,6 +54,8 @@ public final class Device: Identifiable {
     public private(set) var groups: [StripGroup] = []
     public private(set) var deviceControls: [ControlDescriptor] = []
     public private(set) var traits = DriverTraits(reportsChanges: false, readsNames: false)
+    /// The console's keys, when it takes them.
+    public private(set) var keyPanel: KeyPanel?
     /// The user wants this device connected.
     public private(set) var isActive = false
     /// What the console reports besides values: current cues, running states.
@@ -257,12 +259,14 @@ public final class Device: Identifiable {
             guard let self, let driver, driver === self.driver else { return }
             self.groups = driver.groups
             self.deviceControls = driver.deviceControls
+            self.keyPanel = driver.keyPanel
         }
         driver.apply(customizations: config.customizations)
         self.driver = driver
         groups = driver.groups
         deviceControls = driver.deviceControls
         traits = driver.traits
+        keyPanel = driver.keyPanel
         info = [:]
         controls.removeAll()
         strips.removeAll()

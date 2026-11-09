@@ -46,6 +46,50 @@ final class GrandMA3Driver: ConsoleDriver {
         ButtonAction("select", "Select")
     ]
 
+    /// The panel's immediate keys and the command each sends.
+    static let panelCommands = [
+        "goplus": "Go+", "gominus": "Go-", "pause": "Pause", "clear": "Clear", "clearall": "ClearAll",
+        "oops": "Oops", "highlight": "Highlight", "blind": "Blind", "freeze": "Freeze"
+    ]
+
+    /// MA3's keys. MA takes whole command lines over OSC, not key presses, so
+    /// the keys build the line in the app and Please sends it; Go+, Go−,
+    /// Pause, Oops and the like act at once. With nothing typed, Go+ and Go−
+    /// work the selected executor, as on the desk.
+    static let panel: KeyPanel = {
+        func now(_ id: String, _ label: String, _ role: PanelKey.Role = .normal) -> PanelKey {
+            PanelKey("panel.\(id)", label, .trigger(ControlID("panel.\(id)")), role: role)
+        }
+        let w = { (text: String) in PanelKey.word(text) }
+        return KeyPanel(commandLine: .local(send: "command"), sections: [
+            KeySection(id: "objects", title: "Objects", rows: [
+                [w("Fixture"), w("Group"), w("Preset")],
+                [w("Sequence"), w("Cue"), w("Executor")],
+                [w("Page"), w("Macro"), w("Effect")]
+            ]),
+            KeySection(id: "functions", title: "Functions", rows: [
+                [w("Store"), w("Update"), w("Delete")],
+                [w("Copy"), w("Move"), w("Assign")],
+                [w("Label"), w("Edit"), w("Time")]
+            ]),
+            KeySection(id: "numbers", title: "Numbers", rows: [
+                [w("At"), w("Thru"), w("Full")],
+                [PanelKey.word("+", role: .normal), PanelKey.word("-", role: .normal), PanelKey.word("If", role: .normal)]
+            ] + PanelKey.numberPad() + [[
+                PanelKey("clear", "Clear", .clear(ControlID("panel.clear")), role: .clear),
+                PanelKey("backspace", "⌫", .backspace, role: .clear),
+                PanelKey("enter", "Please", .enter, role: .enter)
+            ]]),
+            KeySection(id: "playback", title: "Playback", rows: [
+                [now("goplus", "Go+", .go), now("gominus", "Go−"), now("pause", "Pause", .stop)],
+                [now("highlight", "Highlight"), now("blind", "Blind"), now("freeze", "Freeze")],
+                [now("oops", "Oops", .clear), PanelKey("panel.clearall", "Clear All", .trigger(ControlID("panel.clearall")), role: .clear, span: 2)]
+            ])
+        ])
+    }()
+
+    var keyPanel: KeyPanel? { Self.panel }
+
     static let commandKeywords = ["go": "Go+", "back": "Go-", "toggle": "Toggle", "on": "On", "off": "Off", "top": "Top", "select": "Select"]
 
     private let config: DeviceConfig
@@ -139,6 +183,10 @@ final class GrandMA3Driver: ConsoleDriver {
             return
         default:
             break
+        }
+        if id.rawValue.hasPrefix("panel."), case .trigger = value {
+            if let text = Self.panelCommands[String(id.rawValue.dropFirst(6))] { command(text) }
+            return
         }
         let parts = id.rawValue.split(separator: ".")
         guard parts.count == 3, parts[0] == "exec", let exec = Int(parts[1]) else { return }

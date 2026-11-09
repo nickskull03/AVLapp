@@ -22,6 +22,43 @@ final class EosDriver: ConsoleDriver {
     ]
     let traits = DriverTraits(reportsChanges: true, readsNames: true)
 
+    /// Eos's face panel. Each key is pressed and released on the console
+    /// (`/eos/key/<name>`, 1 then 0), so it lands on the app's OSC user's
+    /// command line exactly as on the desk, and Eos reports the line back.
+    static let panel: KeyPanel = {
+        func key(_ name: String, _ label: String? = nil, _ role: PanelKey.Role = .keyword, span: Int = 1) -> PanelKey {
+            PanelKey("key.\(name)", label ?? name, .press(ControlID("key.\(name)")), role: role, span: span)
+        }
+        func n(_ d: String) -> PanelKey { key(d, d, .number) }
+        return KeyPanel(commandLine: .console(infoKey: "device.cmdline"), sections: [
+            KeySection(id: "targets", title: "Targets", rows: [
+                [key("chan", "Chan"), key("group", "Group"), key("cue", "Cue")],
+                [key("sub", "Sub"), key("macro", "Macro"), key("preset", "Preset")],
+                [key("part", "Part"), key("time", "Time"), key("delay", "Delay")]
+            ]),
+            KeySection(id: "functions", title: "Functions", rows: [
+                [key("record", "Record"), key("update", "Update"), key("delete", "Delete", .clear)],
+                [key("copy_to", "Copy To"), key("label", "Label"), key("sneak", "Sneak")],
+                [key("highlight", "Highlight"), key("rem_dim", "Rem Dim"), key("undo", "Undo", .clear)],
+                [key("last", "Last"), key("next", "Next"), key("home", "Home")]
+            ]),
+            KeySection(id: "numbers", title: "Numbers", rows: [
+                [key("at", "@"), key("thru", "Thru"), key("full", "Full")],
+                [key("+", "+", .normal), key("-", "−", .normal), key("out", "Out")],
+                [n("7"), n("8"), n("9")],
+                [n("4"), n("5"), n("6")],
+                [n("1"), n("2"), n("3")],
+                [key("0", "0", .number, span: 2), n(".")],
+                [key("clear_cmd", "Clear", .clear), key("level", "Level", .normal), key("enter", "Enter", .enter)]
+            ]),
+            KeySection(id: "playback", title: "Playback", rows: [
+                [key("go_0", "Go", .go, span: 2), key("stop_back", "Stop/Back", .stop)]
+            ])
+        ])
+    }()
+
+    var keyPanel: KeyPanel? { Self.panel }
+
     private let transport: Transport
     private let count: Int
     private let base: String
@@ -86,6 +123,10 @@ final class EosDriver: ConsoleDriver {
         default:
             break
         }
+        if id.rawValue.hasPrefix("key."), case .press(let down) = value {
+            osc("\(base)/key/\(id.rawValue.dropFirst(4))", [.float(down ? 1 : 0)])
+            return
+        }
         let parts = id.rawValue.split(separator: ".")
         guard parts.count == 3, let n = Int(parts[1]) else { return }
         switch (parts[2], value) {
@@ -137,6 +178,13 @@ final class EosDriver: ConsoleDriver {
         for packet in framer.feed(data) {
             for message in OSCMessage.decode(packet) {
                 let parts = message.address.split(separator: "/")
+                // eos out cmd, or eos out user <n> cmd: the command line
+                if parts.count >= 3, parts[0] == "eos", parts[1] == "out", parts.last == "cmd",
+                   parts.count == 3 || (parts.count == 5 && parts[2] == "user") {
+                    let text = message.arguments.first?.string ?? ""
+                    sink.info("device.cmdline", text.isEmpty ? nil : text)
+                    continue
+                }
                 // eos out active|pending cue text: what's running and what's next
                 if parts.count == 5, parts[0] == "eos", parts[1] == "out", parts[3] == "cue", parts[4] == "text",
                    parts[2] == "active" || parts[2] == "pending" {

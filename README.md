@@ -39,6 +39,20 @@ and builds the controls from what it says.
 | ETC Eos family | OSC over TCP 3032 | An OSC fader bank | Fire, Stop, Go, Stop/Back, fader pages. Go to cue, set cue time, update cue, command line | Levels, names, active and pending cue |
 | Lights direct | Art-Net to a node's IP | One fader per DMX channel, plus a master | Blackout | (the app is the source) |
 
+### Key panels
+
+Every lighting console except Lights direct has a key panel: switch a
+pane from **Faders** to **Keys** at the top. To see faders and keys together,
+choose two panes in the layout menu, pick the same console in both, and
+switch one of them to Keys.
+
+| Console | How the keys work |
+|---|---|
+| grandMA3 | MA takes whole command lines over OSC, not key presses. So the keys (objects, functions, At/Thru/Full, the number pad) build the line in the app, where you can see it, and **Please** sends it to `/cmd`. Go+, Go−, Pause, Highlight, Blind, Freeze, Oops and Clear All act straight away. **Clear** empties the app's line; tap it again on an empty line to send MA's own Clear. |
+| Lighting | The same way as grandMA3, with its own keywords. Enter sends the line. Go, Back, Pause, Highlight, Oops and Clear All act straight away. |
+| ETC Eos | Each key is pressed and released on Eos itself (`/eos/key/<name>`), on the app's OSC user's command line. Eos reports the command line back and the app shows it above the keys. |
+| ChamSys MagicQ | One row per playback (1–10): Go, Stop, fast back, fast forward, activate, release, through MagicQ's remote protocol on `/rpc`. Jump to a cue from Commands (`2 5` is cue 5 on playback 2). |
+
 ### Customising strips
 
 Tap a strip's name to open its detail. There you can:
@@ -157,7 +171,12 @@ Still to confirm on real hardware:
 - grandMA3: OSC control of the 3xx/4xx knobs (sent as `Fader3nn`), and the
   plugin's cue lookups;
 - MagicQ button addresses (`/pb/<n>/go`, `/stop`, `/flash`);
-- Eos key and fire addresses (`/key/go_0`, `/fader/1/<n>/fire`);
+- Eos key and fire addresses (`/key/go_0`, `/fader/1/<n>/fire`), and the
+  key panel's key names (`chan`, `at`, `copy_to`, `rem_dim`, `clear_cmd`,
+  `stop_back`, …), and the command line arriving as `/eos/out/cmd`;
+- MagicQ's `/rpc` remote commands (`1G`, `1S`, `1B`, `1F`, `1A`, `1R`, `1,5J`);
+- grandMA3 keywords sent bare from the panel (`Go+`, `Highlight`, `Blind`,
+  `Freeze`) acting on the selected executor or toggling;
 - grandMA3's own (non-plugin) feedback format;
 - channel counts on smaller Yamaha models (strips a model lacks just don't answer);
 - DM7 scene recall (not offered yet).

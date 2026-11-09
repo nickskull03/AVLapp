@@ -32,6 +32,8 @@ public protocol ConsoleDriver: AnyObject {
     /// Controls for the whole device: scene recall, page, command line, blackout.
     var deviceControls: [ControlDescriptor] { get }
     var traits: DriverTraits { get }
+    /// The console's keys as a panel, for consoles that take them.
+    var keyPanel: KeyPanel? { get }
     /// Open the connection and read the console's state.
     func start()
     func stop()
@@ -43,6 +45,7 @@ public protocol ConsoleDriver: AnyObject {
 }
 
 public extension ConsoleDriver {
+    var keyPanel: KeyPanel? { nil }
     func detailOpened(_ stripID: String) {}
     func apply(customizations: [String: StripCustomization]) {}
 }
