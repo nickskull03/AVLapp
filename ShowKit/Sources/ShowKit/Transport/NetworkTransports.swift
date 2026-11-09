@@ -54,7 +54,8 @@ final class UDPTransport: Transport {
                 guard let self, self.generation == generation else { return }
                 switch state {
                 case .ready: self.onState(.ready)
-                case .failed(let error), .waiting(let error): self.onState(.failed(error.localizedDescription))
+                case .failed(let error): self.onState(.failed(error.localizedDescription))
+                case .waiting(let error): self.onState(.failed("No network path to the console: \(error.localizedDescription)"))
                 default: break
                 }
             }
@@ -62,32 +63,51 @@ final class UDPTransport: Transport {
         connection.start(queue: queue)
         receive(on: connection, generation: generation)
         self.connection = connection
+        startListener(generation: generation)
+    }
 
-        if let listenPort, listenPort != 0, let nwListenPort = NWEndpoint.Port(rawValue: listenPort) {
-            do {
-                let parameters = NWParameters.udp
-                parameters.allowLocalEndpointReuse = true
-                let listener = try NWListener(using: parameters, on: nwListenPort)
-                listener.newConnectionHandler = { [weak self] incoming in
-                    incoming.start(queue: self?.queue ?? .main)
-                    Task { @MainActor in
-                        guard let self, self.generation == generation else { incoming.cancel(); return }
-                        self.receive(on: incoming, generation: generation)
-                    }
-                }
-                listener.stateUpdateHandler = { [weak self] state in
-                    if case .failed(let error) = state {
-                        Task { @MainActor in
-                            guard let self, self.generation == generation else { return }
-                            self.onState(.failed("Feedback port \(listenPort): \(error.localizedDescription)"))
-                        }
-                    }
-                }
-                listener.start(queue: queue)
-                self.listener = listener
-            } catch {
-                onState(.failed("Feedback port \(listenPort): \(error.localizedDescription)"))
+    /// The feedback port is a separate thing from sending: if it can't open
+    /// (say the previous listener hasn't let go of the port yet), keep sending
+    /// and try it again shortly, rather than failing the whole connection.
+    private func startListener(generation: Int) {
+        guard let listenPort, listenPort != 0, let nwListenPort = NWEndpoint.Port(rawValue: listenPort) else { return }
+        listener?.cancel()
+        listener = nil
+        let parameters = NWParameters.udp
+        parameters.allowLocalEndpointReuse = true
+        guard let listener = try? NWListener(using: parameters, on: nwListenPort) else {
+            retryListener(generation: generation)
+            return
+        }
+        listener.newConnectionHandler = { [weak self] incoming in
+            incoming.start(queue: self?.queue ?? .main)
+            Task { @MainActor in
+                guard let self, self.generation == generation else { incoming.cancel(); return }
+                self.receive(on: incoming, generation: generation)
             }
+        }
+        listener.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .failed, .waiting:
+                Task { @MainActor in
+                    guard let self, self.generation == generation else { return }
+                    self.retryListener(generation: generation)
+                }
+            default:
+                break
+            }
+        }
+        listener.start(queue: queue)
+        self.listener = listener
+    }
+
+    private func retryListener(generation: Int) {
+        listener?.cancel()
+        listener = nil
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard let self, self.generation == generation else { return }
+            self.startListener(generation: generation)
         }
     }
 
