@@ -15,6 +15,8 @@ itself when there's no lighting console. It's built on the design in
 | Behringer X Air / Midas MR | OSC, UDP 10024 | Inputs, aux in, FX returns and sends, buses, DCAs, main, mute groups | The same as the X32 (no trim), with 6 bus sends; buses and main: compressor and 6-band EQ | Preamp | Inputs, buses, main |
 | Behringer Wing (Full, Compact, Rack) | OSC, UDP 2223 | Channels, aux ins, buses, matrices, DCAs, mains, mute groups | Channels: trim, phase, phantom, low/high-cut with slope, gate (GATE model), compressor (COMP model), STD EQ (shelf/peak low and high bands plus 4 parametric), pan and 16 sends. Buses, matrices, mains: compressor and 8-band EQ | Input gain | – |
 | Allen & Heath SQ | MIDI over TCP 51325 | Inputs, FX returns and groups (to LR), mixes, FX sends, matrices, DCAs, LR, mute groups | Not in SQ's MIDI protocol | – | – |
+| Allen & Heath Qu-5 / Qu-6 / Qu-7 (new Qu, 2025) | MIDI over TCP 51325, the SQ's protocol with the Qu's layout (NRPN Fader Law: Linear Taper) | Inputs 1–32, ST1, ST2 and USB, FX returns (to LR), mixes, FX sends, matrices, DCAs, LR, mute groups; scenes 1–300 | Not in Qu's MIDI protocol | – | – |
+| Allen & Heath Qu-16 / 24 / 32 / Pac / SB (original Qu) | MIDI over TCP 51325, the original Qu protocol | Inputs (16, 24 or 32 by model), ST1–3, FX returns, mixes, FX sends, groups and matrices (Qu-24 and up), DCAs, LR, mute groups; names from the desk; scenes 1–100 | Not in Qu's MIDI protocol | – | – |
 | Allen & Heath dLive / Avantis | MIDI over TCP: MixRack 51325, Surface 51328 | Every strip type | High-pass, 4-band parametric EQ with types and widths (inputs). No gate or compressor over MIDI | Preamp (MixRack socket n) | – |
 | Yamaha TF / DM3 / CL / QL / DM7 | RCP text over TCP 49280 | Inputs, stereo inputs, FX returns, mixes, matrices, DCAs, stereo | Whatever the console reports: EQ bands, gate, compressor, high-pass | Head amp, where reported | Inputs (pre-fader) and outputs |
 
@@ -179,7 +181,10 @@ Still to confirm on real hardware:
   `Freeze`) acting on the selected executor or toggling;
 - grandMA3's own (non-plugin) feedback format;
 - channel counts on smaller Yamaha models (strips a model lacks just don't answer);
-- DM7 scene recall (not offered yet).
+- DM7 scene recall (not offered yet);
+- the new Qu answering "get" requests on connect, as the SQ does;
+- the original Qu: replies to Get System State, names for strips a model
+  lacks, and whether it needs the app's once-a-second Active Sensing.
 
 ## Connecting to the Lighting console
 

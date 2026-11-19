@@ -7,6 +7,10 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case behringerXAir
     case behringerWing
     case allenHeathSQ
+    /// The current Qu (2025 on): Qu-5, Qu-6, Qu-7 and their D versions.
+    case allenHeathQu
+    /// The original Qu (2013–2024): Qu-16, Qu-24, Qu-32, Qu-Pac, Qu-SB.
+    case allenHeathQuClassic
     case allenHeathDLive
     case yamahaRCP
     // Lights
@@ -24,6 +28,8 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .behringerXAir: return "Behringer X Air / Midas MR"
         case .behringerWing: return "Behringer Wing"
         case .allenHeathSQ: return "Allen & Heath SQ"
+        case .allenHeathQu: return "Allen & Heath Qu-5 / Qu-6 / Qu-7 (new Qu)"
+        case .allenHeathQuClassic: return "Allen & Heath Qu-16 / 24 / 32 / Pac / SB (original Qu)"
         case .allenHeathDLive: return "Allen & Heath dLive / Avantis"
         case .yamahaRCP: return "Yamaha TF / DM3 / CL / QL / DM7"
         case .grandMA3: return "grandMA3"
@@ -40,6 +46,8 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .behringerXAir: return "X Air"
         case .behringerWing: return "Wing"
         case .allenHeathSQ: return "SQ"
+        case .allenHeathQu: return "Qu"
+        case .allenHeathQuClassic: return "Qu"
         case .allenHeathDLive: return "dLive"
         case .yamahaRCP: return "Yamaha"
         case .grandMA3: return "MA3"
@@ -52,7 +60,8 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
 
     public var domain: Domain {
         switch self {
-        case .behringerX32, .behringerXAir, .behringerWing, .allenHeathSQ, .allenHeathDLive, .yamahaRCP: return .audio
+        case .behringerX32, .behringerXAir, .behringerWing, .allenHeathSQ, .allenHeathQu, .allenHeathQuClassic, .allenHeathDLive, .yamahaRCP:
+            return .audio
         case .grandMA3, .chamsysMagicQ, .etcEos, .lightingConsole, .artNet: return .lighting
         }
     }
@@ -62,7 +71,7 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .behringerX32: return 10023
         case .behringerXAir: return 10024
         case .behringerWing: return 2223
-        case .allenHeathSQ: return 51325
+        case .allenHeathSQ, .allenHeathQu, .allenHeathQuClassic: return 51325
         case .allenHeathDLive: return 51325 // MixRack; the Surface is 51328
         case .yamahaRCP: return 49280
         case .grandMA3: return 8000
@@ -78,6 +87,8 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .allenHeathDLive:
             return [Variant("mixrack", "MixRack (port 51325)"), Variant("surface", "Surface (port 51328)")]
+        case .allenHeathQuClassic:
+            return [Variant("qu16", "Qu-16"), Variant("qu24", "Qu-24"), Variant("qu32", "Qu-32 / Qu-Pac / Qu-SB")]
         case .yamahaRCP:
             return [Variant("tf", "TF"), Variant("dm3", "DM3"), Variant("clql", "CL / QL"), Variant("dm7", "DM7")]
         default:
@@ -96,7 +107,7 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 
     public var usesMIDIChannel: Bool {
-        self == .allenHeathSQ || self == .allenHeathDLive
+        self == .allenHeathSQ || self == .allenHeathQu || self == .allenHeathQuClassic || self == .allenHeathDLive
     }
 
     /// Executors/playbacks/faders shown as a numbered range.
@@ -128,6 +139,20 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
                 "On the SQ: Setup › Control › MIDI. Note the MIDI channel (default 1).",
                 "Set NRPN Fader Law to Linear Taper. The app assumes it.",
                 "Enter the SQ's IP. Port 51325."
+            ]
+        case .allenHeathQu:
+            return [
+                "On the Qu: Utility › General › MIDI. Note the MIDI channel (default 1).",
+                "Set NRPN Fader Law to Linear Taper. The app assumes it.",
+                "Enter the Qu's IP (Utility › Network). Port 51325.",
+                "For the Qu-16, 24, 32, Pac or SB, add \"Qu-16 / 24 / 32 / Pac / SB\" instead: the original Qu speaks a different protocol."
+            ]
+        case .allenHeathQuClassic:
+            return [
+                "Pick your model, then enter the Qu's IP (Setup › Network). Port 51325.",
+                "On the Qu: Setup › Control › MIDI. Note the MIDI channel (default 1); DAW control uses the one after it.",
+                "Qu takes one network MIDI connection at a time: close Qu-Pad's MIDI, Companion or other MIDI apps first. Qu-Pad and Qu-You themselves can stay connected.",
+                "For the Qu-5, Qu-6 or Qu-7, add \"Qu-5 / Qu-6 / Qu-7\" instead."
             ]
         case .allenHeathDLive:
             return [

@@ -1,6 +1,12 @@
 import Foundation
 
-/// Allen & Heath SQ-5/6/7 over MIDI on TCP 51325.
+/// Allen & Heath SQ-5/6/7, and the new Qu-5/6/7, over MIDI on TCP 51325.
+///
+/// The new Qu speaks the SQ's protocol with its own channel layout: 32 mono
+/// inputs plus ST1, ST2 and USB, 6 FX returns, 12 mixes (each an aux or a
+/// group, as set on the desk), 4 FX sends, 4 matrices, 8 DCAs and 8 mute
+/// groups. Its tables are from the Qu-5/6/7 MIDI Protocol (firmware 1.1), as
+/// used by the Companion Qu-5D/6D/7D module.
 ///
 /// Everything is an NRPN: parameter MSB/LSB, then a value as VC (CC 0x06) and
 /// VF (CC 0x26). Levels use the mixer's "Linear Taper" NRPN fader law, a
@@ -13,10 +19,7 @@ final class AllenHeathSQDriver: ConsoleDriver {
     let sink = DriverSink()
     let groups: [StripGroup]
     let deviceControls = [ControlDescriptor("scene", "Recall scene", .number(1...300), needsConfirmation: true)]
-    let traits = DriverTraits(
-        reportsChanges: true, readsNames: false,
-        note: "SQ's MIDI protocol covers levels, mutes and scenes only: no EQ, dynamics, gain or meters."
-    )
+    let traits: DriverTraits
 
     private enum Kind { case level, mute }
 
@@ -45,27 +48,52 @@ final class AllenHeathSQDriver: ConsoleDriver {
 
     init(config: DeviceConfig, transport makeTransport: TransportFactory) {
         channel = UInt8(max(1, min(16, config.midiChannel)) - 1)
+        let isQu = config.kind == .allenHeathQu
+        traits = DriverTraits(
+            reportsChanges: true, readsNames: false,
+            note: "\(isQu ? "Qu" : "SQ")'s MIDI protocol covers levels, mutes and scenes only: no EQ, dynamics, gain or meters."
+        )
         transport = makeTransport(.tcp(host: config.trimmedHost, port: config.port16))
 
         var params: [ControlID: (UInt16, Kind)] = [:]
 
+        /// `offsets`: where each strip sits from the base, when they aren't
+        /// one after another (the Qu's ST1, ST2 and USB). `names`: their names.
         func strips(_ id: String, _ name: String, _ count: Int, _ style: StripStyle,
-                    level: (UInt16, UInt16)?, mute: (UInt16, UInt16), confirmMute: Bool = false) -> [Strip] {
+                    level: (UInt16, UInt16)?, mute: (UInt16, UInt16), confirmMute: Bool = false,
+                    offsets: [Int]? = nil, names: [String]? = nil) -> [Strip] {
             (0..<count).map { i in
                 let stripID = count == 1 ? id : "\(id).\(i + 1)"
+                let offset = offsets?[i] ?? i
                 let muteID = ControlID("\(stripID).mute")
-                params[muteID] = (Self.nrpn(mute.0, mute.1, plus: i), .mute)
+                params[muteID] = (Self.nrpn(mute.0, mute.1, plus: offset), .mute)
                 var fader: ControlDescriptor? = nil
                 if let level {
                     let levelID = ControlID("\(stripID).level")
-                    params[levelID] = (Self.nrpn(level.0, level.1, plus: i), .level)
+                    params[levelID] = (Self.nrpn(level.0, level.1, plus: offset), .level)
                     fader = ControlDescriptor(levelID, "Fader", .fader(.decibels))
                 }
-                return Strip(id: stripID, name: count == 1 ? name : "\(name) \(i + 1)", style: style, fader: fader,
+                let stripName = names?[i] ?? (count == 1 ? name : "\(name) \(i + 1)")
+                return Strip(id: stripID, name: stripName, style: style, fader: fader,
                              buttons: [ControlDescriptor(muteID, "Mute", .toggle(.mute), needsConfirmation: confirmMute)])
             }
         }
 
+        if isQu {
+            groups = [
+                // Input faders here are their level into LR.
+                StripGroup(id: "ip", title: "Inputs", strips: strips("ip", "Ip", 32, .input, level: (0x40, 0x00), mute: (0x00, 0x00))),
+                StripGroup(id: "st", title: "Stereo", strips: strips("st", "ST", 3, .input, level: (0x40, 0x00), mute: (0x00, 0x00),
+                                                                    offsets: [0x20, 0x22, 0x24], names: ["ST1", "ST2", "USB"])),
+                StripGroup(id: "fxr", title: "FX Returns", strips: strips("fxr", "FX Rtn", 6, .fx, level: (0x40, 0x3C), mute: (0x00, 0x3C))),
+                StripGroup(id: "mix", title: "Mixes", strips: strips("mix", "Mix", 12, .bus, level: (0x4F, 0x01), mute: (0x00, 0x45))),
+                StripGroup(id: "fxs", title: "FX Sends", strips: strips("fxs", "FX Send", 4, .fx, level: (0x4F, 0x0D), mute: (0x00, 0x51))),
+                StripGroup(id: "mtx", title: "Matrices", strips: strips("mtx", "Mtx", 4, .bus, level: (0x4F, 0x11), mute: (0x00, 0x55))),
+                StripGroup(id: "dca", title: "DCAs", strips: strips("dca", "DCA", 8, .dca, level: (0x4F, 0x20), mute: (0x02, 0x00))),
+                StripGroup(id: "lr", title: "Main", strips: strips("lr", "Main LR", 1, .master, level: (0x4F, 0x00), mute: (0x00, 0x44), confirmMute: true)),
+                StripGroup(id: "mg", title: "Mute Groups", strips: strips("mg", "Mute Grp", 8, .muteGroup, level: nil, mute: (0x04, 0x00)))
+            ]
+        } else {
         groups = [
             // Input faders here are their level into LR.
             StripGroup(id: "ip", title: "Inputs", strips: strips("ip", "Ip", 48, .input, level: (0x40, 0x00), mute: (0x00, 0x00))),
@@ -78,6 +106,7 @@ final class AllenHeathSQDriver: ConsoleDriver {
             StripGroup(id: "lr", title: "Main", strips: strips("lr", "Main LR", 1, .master, level: (0x4F, 0x00), mute: (0x00, 0x44), confirmMute: true)),
             StripGroup(id: "mg", title: "Mute Groups", strips: strips("mg", "Mute Grp", 8, .muteGroup, level: nil, mute: (0x04, 0x00)))
         ]
+        }
         self.params = params
         controls = Dictionary(uniqueKeysWithValues: params.map { ($0.value.0, ($0.key, $0.value.1)) })
 

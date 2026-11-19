@@ -56,7 +56,8 @@ public enum Drivers {
         switch config.kind {
         case .behringerX32, .behringerXAir: return BehringerDriver(config: config, transport: transport)
         case .behringerWing: return WingDriver(config: config, transport: transport)
-        case .allenHeathSQ: return AllenHeathSQDriver(config: config, transport: transport)
+        case .allenHeathSQ, .allenHeathQu: return AllenHeathSQDriver(config: config, transport: transport)
+        case .allenHeathQuClassic: return AllenHeathQuClassicDriver(config: config, transport: transport)
         case .allenHeathDLive: return AllenHeathDLiveDriver(config: config, transport: transport)
         case .yamahaRCP: return YamahaRCPDriver(config: config, transport: transport)
         case .grandMA3: return GrandMA3Driver(config: config, transport: transport)
