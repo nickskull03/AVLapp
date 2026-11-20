@@ -19,6 +19,9 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case etcEos
     case lightingConsole
     case artNet
+    // Built in, for trying the app without a network
+    case demoAudio
+    case demoLighting
 
     public var id: String { rawValue }
 
@@ -37,6 +40,8 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .etcEos: return "ETC Eos family"
         case .lightingConsole: return "Lighting (desktop console)"
         case .artNet: return "Lights direct (Art-Net DMX)"
+        case .demoAudio: return "Demo mixer (offline)"
+        case .demoLighting: return "Demo lighting console (offline)"
         }
     }
 
@@ -55,14 +60,16 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .etcEos: return "Eos"
         case .lightingConsole: return "Lighting"
         case .artNet: return "DMX"
+        case .demoAudio: return "Demo mixer"
+        case .demoLighting: return "Demo lights"
         }
     }
 
     public var domain: Domain {
         switch self {
-        case .behringerX32, .behringerXAir, .behringerWing, .allenHeathSQ, .allenHeathQu, .allenHeathQuClassic, .allenHeathDLive, .yamahaRCP:
+        case .behringerX32, .behringerXAir, .behringerWing, .allenHeathSQ, .allenHeathQu, .allenHeathQuClassic, .allenHeathDLive, .yamahaRCP, .demoAudio:
             return .audio
-        case .grandMA3, .chamsysMagicQ, .etcEos, .lightingConsole, .artNet: return .lighting
+        case .grandMA3, .chamsysMagicQ, .etcEos, .lightingConsole, .artNet, .demoLighting: return .lighting
         }
     }
 
@@ -79,6 +86,7 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .etcEos: return 3032
         case .lightingConsole: return 8080
         case .artNet: return 6454
+        case .demoAudio, .demoLighting: return 0
         }
     }
 
@@ -104,6 +112,11 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
             self.id = id
             self.title = title
         }
+    }
+
+    /// Lives inside the app: no IP, no network, nothing to set up.
+    public var isDemo: Bool {
+        self == .demoAudio || self == .demoLighting
     }
 
     public var usesMIDIChannel: Bool {
@@ -190,6 +203,16 @@ public enum DeviceKind: String, Codable, CaseIterable, Identifiable, Sendable {
                 "Start the console so other devices can reach it: run \"npm start -- --host 0.0.0.0\" on the computer running it (the desktop app only listens on that computer).",
                 "Enter that computer's IP and the console's port (8080 unless you changed it).",
                 "There's no login: only do this on a network you trust."
+            ]
+        case .demoAudio:
+            return [
+                "Nothing to set up: this mixer lives inside the app, so you can try everything with no network.",
+                "Faders, mutes, gain, EQ, gate and compressor all work, and the meters move with a made-up signal."
+            ]
+        case .demoLighting:
+            return [
+                "Nothing to set up: this console lives inside the app, so you can try everything with no network.",
+                "Ten sequences with cues: Go steps through them, Flash and Off work, and the key panel takes commands."
             ]
         case .artNet:
             return [

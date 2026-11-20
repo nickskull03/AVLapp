@@ -106,7 +106,7 @@ struct KeyPanelView: View {
             } label: {
                 KeyCap(key: key, pressed: false)
             }
-            .buttonStyle(KeyPressStyle())
+            .buttonStyle(PressStyle(cornerRadius: 8))
         }
     }
 
@@ -147,6 +147,7 @@ private struct PressKey: View {
 
     var body: some View {
         KeyCap(key: key, pressed: pressed)
+            .pressedLook(pressed, cornerRadius: 8)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { _ in
@@ -207,14 +208,5 @@ struct KeyCap: View {
         case .go, .stop, .enter: return .white
         default: return .primary
         }
-    }
-}
-
-/// Lights a tapped key while the finger is down.
-private struct KeyPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .brightness(configuration.isPressed ? 0.15 : 0)
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
     }
 }

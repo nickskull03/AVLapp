@@ -556,7 +556,7 @@ struct ControlButton: View {
             } label: {
                 StripButtonLabel(title: control.label, lit: on, litColor: role == .mute ? .red : role == .enable ? .green : .black)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressStyle())
             .disabled(!isEnabled)
             .confirmationDialog("\(control.label)?", isPresented: $confirming) {
                 Button(control.label, role: .destructive) { device.set(control.id, on: true) }
@@ -567,7 +567,7 @@ struct ControlButton: View {
             } label: {
                 StripButtonLabel(title: control.label, lit: false, litColor: .accentColor)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressStyle())
             .disabled(!isEnabled)
             .confirmationDialog("\(control.label)?", isPresented: $confirming) {
                 Button(control.label) { device.perform(control.id, .trigger) }
@@ -577,6 +577,7 @@ struct ControlButton: View {
             let name = device.info["\(owner).name"]
             StripButtonLabel(title: name.map { "\(control.label) \($0)" } ?? control.label,
                              lit: pressed || running, litColor: pressed ? .yellow : .orange)
+                .pressedLook(pressed)
                 .opacity(isEnabled ? 1 : 0.4)
                 .gesture(
                     DragGesture(minimumDistance: 0)
@@ -745,5 +746,49 @@ struct DeviceControlsBar: View {
         default:
             EmptyView()
         }
+    }
+}
+
+/// How a pressed button looks: pushed in (smaller, shaded) and outlined in
+/// yellow. A quick tap still shows, because the look lingers a moment after
+/// the finger lifts.
+struct PressStyle: ButtonStyle {
+    var cornerRadius: CGFloat = 6
+
+    func makeBody(configuration: Configuration) -> some View {
+        PressBody(label: configuration.label, isPressed: configuration.isPressed, cornerRadius: cornerRadius)
+    }
+
+    private struct PressBody<Label: View>: View {
+        let label: Label
+        let isPressed: Bool
+        let cornerRadius: CGFloat
+        @State private var lingering = false
+
+        var body: some View {
+            label
+                .pressedLook(isPressed || lingering, cornerRadius: cornerRadius)
+                .onChange(of: isPressed) { _, pressed in
+                    guard !pressed else { return }
+                    lingering = true
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 180_000_000)
+                        lingering = false
+                    }
+                }
+                .sensoryFeedback(.impact(weight: .light), trigger: isPressed) { _, pressed in pressed }
+        }
+    }
+}
+
+extension View {
+    /// Pushed in and outlined while `down`.
+    func pressedLook(_ down: Bool, cornerRadius: CGFloat = 6) -> some View {
+        self
+            .overlay(RoundedRectangle(cornerRadius: cornerRadius).fill(Color.black.opacity(down ? 0.22 : 0)))
+            .overlay(RoundedRectangle(cornerRadius: cornerRadius).stroke(Color.yellow, lineWidth: down ? 2.5 : 0))
+            .scaleEffect(down ? 0.92 : 1)
+            .shadow(color: .black.opacity(down ? 0 : 0.25), radius: down ? 0 : 1.5, y: down ? 0 : 1.5)
+            .animation(.easeOut(duration: 0.08), value: down)
     }
 }

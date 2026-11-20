@@ -65,6 +65,8 @@ public enum Drivers {
         case .etcEos: return EosDriver(config: config, transport: transport)
         case .lightingConsole: return LightingConsoleDriver(config: config, transport: transport)
         case .artNet: return ArtNetDriver(config: config, transport: transport)
+        case .demoAudio: return DemoAudioDriver(config: config, transport: transport)
+        case .demoLighting: return DemoLightingDriver(config: config, transport: transport)
         }
     }
 }

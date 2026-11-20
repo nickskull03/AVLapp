@@ -16,7 +16,7 @@ struct DevicesView: View {
                         .frame(width: 24)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(device.name).font(.headline)
-                        Text("\(device.kind.title) · \(device.config.host.isEmpty ? "no IP set" : device.config.host)")
+                        Text(device.kind.isDemo ? "Built in · works offline" : "\(device.kind.title) · \(device.config.host.isEmpty ? "no IP set" : device.config.host)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -57,16 +57,21 @@ struct DevicesView: View {
                 Menu {
                     if mode.allows(.audio) {
                         Section("Sound") {
-                            ForEach(DeviceKind.allCases.filter { $0.domain == .audio }) { kind in
+                            ForEach(DeviceKind.allCases.filter { $0.domain == .audio && !$0.isDemo }) { kind in
                                 Button(kind.title) { editing = DeviceConfig(kind: kind) }
                             }
                         }
                     }
                     if mode.allows(.lighting) {
                         Section("Lights") {
-                            ForEach(DeviceKind.allCases.filter { $0.domain == .lighting }) { kind in
+                            ForEach(DeviceKind.allCases.filter { $0.domain == .lighting && !$0.isDemo }) { kind in
                                 Button(kind.title) { editing = DeviceConfig(kind: kind) }
                             }
+                        }
+                    }
+                    Section("Try it without a console") {
+                        ForEach(DeviceKind.allCases.filter { $0.isDemo && mode.allows($0.domain) }) { kind in
+                            Button(kind.title, systemImage: "play.circle") { addDemo(kind) }
                         }
                     }
                 } label: {
@@ -80,11 +85,16 @@ struct DevicesView: View {
         }
         .overlay {
             if show.devices.isEmpty {
-                ContentUnavailableView(
-                    "Add your consoles",
-                    systemImage: "plus.circle",
-                    description: Text("Tap + to add a mixer or lighting console. Each one comes with the steps to set it up.")
-                )
+                ContentUnavailableView {
+                    Label("Add your consoles", systemImage: "plus.circle")
+                } description: {
+                    Text("Tap + to add a mixer or lighting console. Each one comes with the steps to set it up.")
+                } actions: {
+                    Button("Try the demo consoles", systemImage: "play.circle") {
+                        for kind in DeviceKind.allCases where kind.isDemo && mode.allows(kind.domain) { addDemo(kind) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             }
         }
         .sheet(item: $editing) { config in
@@ -92,6 +102,13 @@ struct DevicesView: View {
                 DeviceEditor(config: config, isNew: show.device(config.id) == nil)
             }
         }
+    }
+}
+
+extension DevicesView {
+    /// Adds a built-in demo console and connects it: nothing to set up.
+    func addDemo(_ kind: DeviceKind) {
+        show.addDevice(DeviceConfig(kind: kind)).connect()
     }
 }
 
@@ -105,22 +122,24 @@ struct DeviceEditor: View {
         Form {
             Section {
                 TextField("Name", text: $config.name)
-                LabeledContent("IP address") {
-                    TextField("192.168.1.10", text: $config.host)
-                        .multilineTextAlignment(.trailing)
-                        .keyboardType(.numbersAndPunctuation)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-                if !config.kind.variants.isEmpty {
-                    Picker("Model", selection: $config.variant) {
-                        ForEach(config.kind.variants) { Text($0.title).tag($0.id) }
+                if !config.kind.isDemo {
+                    LabeledContent("IP address") {
+                        TextField("192.168.1.10", text: $config.host)
+                            .multilineTextAlignment(.trailing)
+                            .keyboardType(.numbersAndPunctuation)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
                     }
-                    .onChange(of: config.variant) { _, variant in
-                        if config.kind == .allenHeathDLive { config.port = variant == "surface" ? 51328 : 51325 }
+                    if !config.kind.variants.isEmpty {
+                        Picker("Model", selection: $config.variant) {
+                            ForEach(config.kind.variants) { Text($0.title).tag($0.id) }
+                        }
+                        .onChange(of: config.variant) { _, variant in
+                            if config.kind == .allenHeathDLive { config.port = variant == "surface" ? 51328 : 51325 }
+                        }
                     }
+                    NumberField(title: "Port", value: $config.port)
                 }
-                NumberField(title: "Port", value: $config.port)
                 if config.kind.usesMIDIChannel {
                     Stepper("MIDI channel \(config.midiChannel)", value: $config.midiChannel,
                             in: 1...(config.kind == .allenHeathDLive ? 12 : 16))

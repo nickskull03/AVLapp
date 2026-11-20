@@ -105,7 +105,13 @@ struct StripDetailView: View {
                         EQGraphView(device: device, layout: eq, controls: section.controls)
                             .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
                     }
-                    ForEach(section.controls) { control in
+                    let dynamics = section.eq == nil ? DynamicsLayout(section: section) : nil
+                    if let dynamics {
+                        DynamicsView(device: device, stripID: strip.id, layout: dynamics, controls: section.controls)
+                            .listRowInsets(EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12))
+                    }
+                    // What the graph and knobs don't cover (mode, detector, …) stays in the list.
+                    ForEach(section.controls.filter { dynamics?.handled.contains($0.id) != true }) { control in
                         ControlRow(device: device, control: control)
                     }
                 } header: {

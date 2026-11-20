@@ -39,7 +39,8 @@ public struct DeviceConfig: Codable, Identifiable, Equatable, Sendable {
         id = UUID()
         self.kind = kind
         self.name = name ?? kind.shortTitle
-        self.host = host
+        // A demo needs no address, but "has a host" is how the app knows a device can connect.
+        self.host = kind.isDemo && host.isEmpty ? "demo" : host
         port = kind.defaultPort
         variant = kind.variants.first?.id ?? ""
         midiChannel = 1

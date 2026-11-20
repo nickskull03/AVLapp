@@ -41,6 +41,37 @@ and builds the controls from what it says.
 | ETC Eos family | OSC over TCP 3032 | An OSC fader bank | Fire, Stop, Go, Stop/Back, fader pages. Go to cue, set cue time, update cue, command line | Levels, names, active and pending cue |
 | Lights direct | Art-Net to a node's IP | One fader per DMX channel, plus a master | Blackout | (the app is the source) |
 
+### Demo consoles (offline)
+
+Devices › + › **Try it without a console** adds a demo mixer or a demo
+lighting console that live inside the app; with no devices yet, **Try the
+demo consoles** adds both. Nothing to set up and nothing goes on the network.
+
+- **Demo mixer**: sixteen named inputs with gain, high-pass, gate,
+  compressor and a 4-band EQ, four mixes and the main LR. It plays back
+  whatever you change, and makes up a signal so the meters move and the
+  gate and compressor act on it (the compressor graph shows the live
+  signal and its gain reduction).
+- **Demo lighting**: ten sequences with named cues on faders, a grand master
+  and blackout, and the key panel. Go steps through cues, Off stops, Flash
+  holds, and the command line takes `Fader 2 At 50`, `Go` and `Off`.
+
+### Compressor and gate
+
+A strip's compressor and gate are drawn as a curve (signal in across, out
+up) with the live signal riding on it: drag the dot on the curve for the
+threshold, the end of the curve for the ratio, or the low dot for the gate's
+range. Attack, hold, release, knee, make-up and mix are knobs: drag up or
+right to turn them up. Other settings (mode, detector) stay in the list.
+This works for every mixer whose compressor or gate the app reads.
+
+### Buttons
+
+Buttons push in and light with a yellow outline while pressed, and stay lit
+for a moment after a quick tap, so you can see a Go or a key landed. Keys
+held on the console (Flash, MA keys, Eos keys) stay pushed in for as long as
+your finger is on them.
+
 ### Key panels
 
 Every lighting console except Lights direct has a key panel: switch a
